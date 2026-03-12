@@ -178,6 +178,7 @@ func TestMatchCommand(t *testing.T) {
 		})
 	}
 }
+<<<<<<< HEAD
 
 func TestClassifyServicesComplex(t *testing.T) {
 	cf, err := ParseComposeFile("testdata/compose-complex.yml")
@@ -277,3 +278,5 @@ func TestFindComposeFile(t *testing.T) {
 		t.Errorf("expected docker-compose.yml, got %q", path)
 	}
 }
+=======
+>>>>>>> f8a9438 (feat: mf init — compose scanner with pluggable image matcher registry)
