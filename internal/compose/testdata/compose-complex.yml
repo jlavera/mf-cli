@@ -1,0 +1,78 @@
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DATABASE_URL=postgres://admin:pass@db:5432/myapp
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+
+  db:
+    image: bitnami/postgresql:15
+    environment:
+      - POSTGRES_DB=myapp
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: valkey:7
+    ports:
+      - "6379:6379"
+
+  worker:
+    build: .
+    command: ["celery", "-A", "config", "worker", "-l", "info"]
+    depends_on:
+      - api
+      - redis
+
+  beat:
+    build: .
+    command: celery -A config beat -l info
+    depends_on:
+      - api
+      - redis
+
+  flower:
+    image: mher/flower:latest
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+    command: server /data
+
+volumes:
+  pgdata:

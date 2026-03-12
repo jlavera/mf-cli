@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/topline
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: topline
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  celery_worker:
+    build: .
+    command: celery -A config worker -l info
+    depends_on:
+      - web
+      - redis
+
+  celery_flower:
+    build: .
+    command: celery -A config flower
+    ports:
+      - "5555:5555"
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
