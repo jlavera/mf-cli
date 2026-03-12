@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"os"
 	"testing"
 )
 
@@ -175,5 +176,104 @@ func TestMatchCommand(t *testing.T) {
 				t.Errorf("matchCommand(%q) = %q, want %q", tt.cmd, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestClassifyServicesComplex(t *testing.T) {
+	cf, err := ParseComposeFile("testdata/compose-complex.yml")
+	if err != nil {
+		t.Fatalf("failed to parse complex compose: %v", err)
+	}
+
+	detected := ClassifyServices(cf)
+	byName := make(map[string]DetectedService)
+	for _, ds := range detected {
+		byName[ds.Name] = ds
+	}
+
+	tests := []struct {
+		name         string
+		expectedRole string
+	}{
+		{"api", "backend"},
+		{"frontend", "frontend"},
+		{"db", "db"},
+		{"redis", "redis"},
+		{"worker", "celery_worker"},
+		{"beat", "celery_beat"},
+		{"flower", "flower"},
+		{"mailpit", "mail"},
+		{"minio", "storage"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ds, ok := byName[tt.name]
+			if !ok {
+				t.Fatalf("service %q not found", tt.name)
+			}
+			if ds.Role != tt.expectedRole {
+				t.Errorf("service %q: expected role %q, got %q", tt.name, tt.expectedRole, ds.Role)
+			}
+		})
+	}
+
+	// Check DB details from bitnami/postgresql with list-format env
+	db := byName["db"]
+	if db.ServiceType != "postgres" {
+		t.Errorf("db type: expected postgres, got %q", db.ServiceType)
+	}
+	if db.DBName != "myapp" {
+		t.Errorf("db name: expected myapp, got %q", db.DBName)
+	}
+	if db.DBUser != "admin" {
+		t.Errorf("db user: expected admin, got %q", db.DBUser)
+	}
+
+	// Check frontend build context
+	fe := byName["frontend"]
+	if fe.BuildCtx != "./frontend" {
+		t.Errorf("frontend build context: expected './frontend', got %q", fe.BuildCtx)
+	}
+}
+
+func TestClassifyServicesMinimal(t *testing.T) {
+	cf, err := ParseComposeFile("testdata/compose-minimal.yml")
+	if err != nil {
+		t.Fatalf("failed to parse minimal compose: %v", err)
+	}
+
+	detected := ClassifyServices(cf)
+	if len(detected) != 1 {
+		t.Fatalf("expected 1 service, got %d", len(detected))
+	}
+
+	ds := detected[0]
+	if ds.Name != "app" {
+		t.Errorf("expected name 'app', got %q", ds.Name)
+	}
+	// Port 3000 with build context → backend
+	if ds.Role != "backend" {
+		t.Errorf("expected role 'backend', got %q", ds.Role)
+	}
+}
+
+func TestFindComposeFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// No compose file
+	_, err := FindComposeFile(dir)
+	if err == nil {
+		t.Error("expected error for empty dir")
+	}
+
+	// Create docker-compose.yml
+	os.WriteFile(dir+"/docker-compose.yml", []byte("services:\n  app:\n    image: alpine"), 0644)
+	path, err := FindComposeFile(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if path != dir+"/docker-compose.yml" {
+		t.Errorf("expected docker-compose.yml, got %q", path)
 	}
 }
