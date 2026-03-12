@@ -15,6 +15,19 @@ mise install go@1.26.1
 mise use go@1.26.1
 ```
 
+## Requirements
+
+This project requires **Go 1.26.1**. Use [mise](https://mise.jdx.dev/) to manage Go versions:
+
+```bash
+# Install mise (if you don't have it)
+curl https://mise.run | sh
+
+# Install the right Go version (reads .go-version or go.mod)
+mise install go@1.26.1
+mise use go@1.26.1
+```
+
 ## Install
 
 ```bash
