@@ -2,14 +2,26 @@
 
 `mf` is a standalone CLI tool that replaces project Makefiles for docker-compose based projects. It provides organized commands with proper help, flags, and shell completions — all driven by a simple `mf.yaml` config file.
 
+## Requirements
+
+This project requires **Go 1.26.1**. Use [mise](https://mise.jdx.dev/) to manage Go versions:
+
+```bash
+# Install mise (if you don't have it)
+curl https://mise.run | sh
+
+# Install the right Go version (reads .go-version or go.mod)
+mise install go@1.26.1
+mise use go@1.26.1
+```
+
 ## Install
 
 ```bash
-# Build from source
-go build -o mf .
-sudo mv mf /usr/local/bin/
+# Build and install (overwrites existing install)
+make install
 
-# Or install directly
+# Or install directly from source
 go install github.com/jlavera/mf-cli@latest
 ```
 
