@@ -15,6 +15,17 @@ var (
 	comp    *compose.Compose
 )
 
+// configRequired lists commands where mf.yaml must exist.
+// All other commands will try to load config but won't fail if missing.
+var configRequired = map[string]bool{
+	"up": true, "stop": true, "build": true, "down": true,
+	"logs": true, "restart": true, "clean": true, "rebuild": true,
+	"shell": true, "psql": true, "redis-cli": true,
+	"test": true, "format": true, "format-all": true, "lint": true,
+	"sort-imports": true, "pre-commit": true,
+	"start": true, "check": true, // celery/debug subcommands
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "mf",
 	Short: "mf — a CLI for docker-compose based projects",
@@ -23,89 +34,32 @@ defaults and organized subcommands. Configure it with an mf.yaml
 file in your project root (run 'mf init' to generate one).`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Skip config for commands that explicitly opt out
+		for c := cmd; c != nil; c = c.Parent() {
+			if _, ok := c.Annotations["skipConfig"]; ok {
+				return nil
+			}
+		}
+
+		// Try to load config
+		var err error
+		cfg, err = config.Load(cfgFile)
+		if err != nil {
+			// Only fail if this command actually needs config
+			if configRequired[cmd.Name()] {
+				return err
+			}
+			// Otherwise silently skip (completion, help, etc.)
+			return nil
+		}
+		comp = compose.New(cfg)
+		return nil
+	},
 }
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", config.DefaultConfigFile, "config file path")
-
-	// Load config before any command that needs it.
-	// Commands that don't need config (like init) set their own annotation
-	// to skip this.
-	cobra.OnInitialize(loadConfig)
-}
-
-// commandsSkipConfig lists command names that should never trigger config loading.
-// This includes Cobra built-in commands and our own init command.
-var commandsSkipConfig = map[string]bool{
-	"init":             true,
-	"help":             true,
-	"completion":       true,
-	"__complete":       true,
-	"__completeNoDesc": true,
-}
-
-// loadConfig loads the mf.yaml config file. Skipped for commands that
-// don't need it (init, help, completion, etc.).
-func loadConfig() {
-	if shouldSkipConfig() {
-		// For completion commands, still try to load config silently
-		// so that dynamic completions (service names) work when possible.
-		if isCompletionCommand() {
-			loadConfigSilent()
-		}
-		return
-	}
-
-	var err error
-	cfg, err = config.Load(cfgFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	comp = compose.New(cfg)
-}
-
-// shouldSkipConfig checks if the current command should skip mandatory config loading.
-func shouldSkipConfig() bool {
-	if len(os.Args) < 2 {
-		return true // root command with no args — just shows help
-	}
-
-	cmd, _, _ := rootCmd.Find(os.Args[1:])
-	if cmd != nil {
-		// Check annotation
-		if _, ok := cmd.Annotations["skipConfig"]; ok {
-			return true
-		}
-		// Check built-in skip list (walk up to check parent commands too)
-		for c := cmd; c != nil; c = c.Parent() {
-			if commandsSkipConfig[c.Name()] {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
-// isCompletionCommand returns true if the current invocation is a completion request.
-func isCompletionCommand() bool {
-	if len(os.Args) < 2 {
-		return false
-	}
-	return os.Args[1] == "__complete" || os.Args[1] == "__completeNoDesc"
-}
-
-// loadConfigSilent tries to load config without failing. Used during completion
-// so that service name suggestions work when config exists, but TAB doesn't
-// break when it doesn't.
-func loadConfigSilent() {
-	var err error
-	cfg, err = config.Load(cfgFile)
-	if err != nil {
-		return // silently skip — completions will degrade gracefully
-	}
-	comp = compose.New(cfg)
 }
 
 // Execute runs the root command.
