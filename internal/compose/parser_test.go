@@ -258,6 +258,54 @@ func TestClassifyServicesMinimal(t *testing.T) {
 	}
 }
 
+func TestClassifyServicesWithEnvVars(t *testing.T) {
+	cf, err := ParseComposeFile("testdata/compose-envvars.yml")
+	if err != nil {
+		t.Fatalf("failed to parse envvars compose: %v", err)
+	}
+
+	detected := ClassifyServices(cf)
+	if len(detected) != 4 {
+		t.Fatalf("expected 4 services, got %d", len(detected))
+	}
+
+	byName := make(map[string]DetectedService)
+	for _, ds := range detected {
+		byName[ds.Name] = ds
+	}
+
+	// api has build + port 3000 → backend
+	api := byName["api"]
+	if api.Role != "backend" {
+		t.Errorf("api: expected role 'backend', got %q", api.Role)
+	}
+
+	// postgres has image postgres:17-alpine → db
+	pg := byName["postgres"]
+	if pg.Role != "db" {
+		t.Errorf("postgres: expected role 'db', got %q", pg.Role)
+	}
+	if pg.ServiceType != "postgres" {
+		t.Errorf("postgres: expected type 'postgres', got %q", pg.ServiceType)
+	}
+	// env vars have ${VAR:-default} syntax — should be stored as-is
+	if pg.DBName == "" {
+		t.Error("postgres: expected db_name to be set (even with env var syntax)")
+	}
+
+	// web has port 3001 → frontend
+	web := byName["web"]
+	if web.Role != "frontend" {
+		t.Errorf("web: expected role 'frontend', got %q", web.Role)
+	}
+
+	// admin has port 3003 → app (not a standard frontend port)
+	admin := byName["admin"]
+	if admin.Role != "app" {
+		t.Errorf("admin: expected role 'app', got %q", admin.Role)
+	}
+}
+
 func TestFindComposeFile(t *testing.T) {
 	dir := t.TempDir()
 

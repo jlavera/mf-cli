@@ -322,6 +322,88 @@ func TestShellCompletionSingleArg(t *testing.T) {
 	}
 }
 
+func TestCompletionGenerationDoesNotHang(t *testing.T) {
+	// Test that 'mf completion bash/zsh/fish' works in directories
+	// both with and without mf.yaml — should never hang or error.
+	shells := []string{"bash", "zsh", "fish"}
+
+	// Without config
+	dirNoConfig := t.TempDir()
+	for _, shell := range shells {
+		t.Run("no_config_"+shell, func(t *testing.T) {
+			stdout, stderr, err := runMF(dirNoConfig, "completion", shell)
+			if err != nil {
+				t.Fatalf("completion %s failed: %v\nstderr: %s", shell, err, stderr)
+			}
+			if len(stdout) < 100 {
+				t.Errorf("completion %s output too short (%d bytes)", shell, len(stdout))
+			}
+		})
+	}
+
+	// With config
+	dirWithConfig := t.TempDir()
+	os.WriteFile(filepath.Join(dirWithConfig, "docker-compose.yml"), []byte(`services:
+  web:
+    build: .
+`), 0644)
+	runMF(dirWithConfig, "init")
+
+	for _, shell := range shells {
+		t.Run("with_config_"+shell, func(t *testing.T) {
+			stdout, stderr, err := runMF(dirWithConfig, "completion", shell)
+			if err != nil {
+				t.Fatalf("completion %s failed: %v\nstderr: %s", shell, err, stderr)
+			}
+			if len(stdout) < 100 {
+				t.Errorf("completion %s output too short (%d bytes)", shell, len(stdout))
+			}
+		})
+	}
+}
+
+func TestCompletionWithEnvVarCompose(t *testing.T) {
+	// Test that completion works with compose files using ${VAR:-default} syntax
+	dir := t.TempDir()
+	composeContent := `services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-mydb}
+`
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeContent), 0644)
+	runMF(dir, "init")
+
+	// __complete should return service names
+	stdout, _, err := runMF(dir, "__complete", "up", "")
+	if err != nil {
+		t.Fatalf("completion failed: %v", err)
+	}
+	if !strings.Contains(stdout, "api") || !strings.Contains(stdout, "postgres") {
+		t.Errorf("expected api and postgres in completions, got:\n%s", stdout)
+	}
+
+	// completion zsh should work
+	stdout, _, err = runMF(dir, "completion", "zsh")
+	if err != nil {
+		t.Fatalf("completion zsh failed: %v", err)
+	}
+	if len(stdout) < 100 {
+		t.Error("completion zsh output too short")
+	}
+}
+
 func TestFileCompletionDirectives(t *testing.T) {
 	dir := t.TempDir()
 
