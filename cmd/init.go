@@ -32,6 +32,10 @@ var (
 func init() {
 	initCmd.Flags().StringVarP(&initFile, "file", "f", "", "path to docker-compose file")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite existing mf.yaml without prompting")
+
+	// Register file completion for the --file flag (yml/yaml files)
+	initCmd.RegisterFlagCompletionFunc("file", completeComposeFiles)
+
 	rootCmd.AddCommand(initCmd)
 }
 

@@ -237,3 +237,114 @@ func TestNoConfigError(t *testing.T) {
 		t.Errorf("expected mf.yaml error message, got:\n%s", stderr)
 	}
 }
+
+func TestServiceNameCompletion(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create compose file + mf.yaml
+	composeContent := `services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+  db:
+    image: postgres:15
+  redis:
+    image: redis:7
+`
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeContent), 0644)
+
+	// Run init to create mf.yaml
+	_, _, err := runMF(dir, "init")
+	if err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+
+	// Test service completion for 'up'
+	stdout, _, err := runMF(dir, "__complete", "up", "")
+	if err != nil {
+		t.Fatalf("completion failed: %v", err)
+	}
+
+	for _, svc := range []string{"web", "db", "redis"} {
+		if !strings.Contains(stdout, svc) {
+			t.Errorf("completion for 'up' missing service %q\nstdout: %s", svc, stdout)
+		}
+	}
+
+	// Verify ShellCompDirectiveNoFileComp is set (directive :4)
+	if !strings.Contains(stdout, ":4") {
+		t.Error("expected ShellCompDirectiveNoFileComp (:4) in completion output")
+	}
+}
+
+func TestServiceCompletionFiltersUsedArgs(t *testing.T) {
+	dir := t.TempDir()
+
+	composeContent := `services:
+  web:
+    build: .
+  db:
+    image: postgres:15
+  redis:
+    image: redis:7
+`
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeContent), 0644)
+	runMF(dir, "init")
+
+	// Complete 'up web <TAB>' — web should be filtered out
+	stdout, _, _ := runMF(dir, "__complete", "up", "web", "")
+	if strings.Contains(stdout, "\nweb\n") {
+		t.Error("completion should filter out already-used service 'web'")
+	}
+	// db and redis should still be present
+	if !strings.Contains(stdout, "db") || !strings.Contains(stdout, "redis") {
+		t.Errorf("expected db and redis in completion, got:\n%s", stdout)
+	}
+}
+
+func TestShellCompletionSingleArg(t *testing.T) {
+	dir := t.TempDir()
+
+	composeContent := `services:
+  web:
+    build: .
+  db:
+    image: postgres:15
+`
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeContent), 0644)
+	runMF(dir, "init")
+
+	// Complete 'shell web <TAB>' — should return nothing (only 1 arg)
+	stdout, _, _ := runMF(dir, "__complete", "shell", "web", "")
+	if strings.Contains(stdout, "db") {
+		t.Error("shell completion should not suggest more services after first arg")
+	}
+}
+
+func TestFileCompletionDirectives(t *testing.T) {
+	dir := t.TempDir()
+
+	composeContent := `services:
+  web:
+    build: .
+`
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeContent), 0644)
+	runMF(dir, "init")
+
+	// Test -f completion filters to .py files
+	stdout, _, _ := runMF(dir, "__complete", "test", "--file", "")
+	if !strings.Contains(stdout, "py") {
+		t.Error("test --file completion should suggest .py extension filter")
+	}
+	// Directive :8 = ShellCompDirectiveFilterFileExt
+	if !strings.Contains(stdout, ":8") {
+		t.Error("expected ShellCompDirectiveFilterFileExt (:8)")
+	}
+
+	// Init --file completion filters to yml/yaml
+	stdout, _, _ = runMF(dir, "__complete", "init", "--file", "")
+	if !strings.Contains(stdout, "yml") || !strings.Contains(stdout, "yaml") {
+		t.Error("init --file completion should suggest yml/yaml extension filter")
+	}
+}

@@ -125,6 +125,10 @@ func init() {
 	e2eRunCmd.Flags().StringVarP(&e2eFile, "file", "f", "", "specific test file to run")
 	e2eRunCmd.Flags().StringVar(&e2eProject, "project", "", "playwright project to run (e.g. approval, rejection)")
 
+	// Register completions for e2e flags
+	e2eRunCmd.RegisterFlagCompletionFunc("file", completeE2EFiles)
+	e2eRunCmd.RegisterFlagCompletionFunc("project", completeE2EProjects)
+
 	e2eCmd.AddCommand(e2eInstallCmd)
 	e2eCmd.AddCommand(e2eRunCmd)
 	e2eCmd.AddCommand(e2eUICmd)

@@ -7,8 +7,9 @@ import (
 )
 
 var restartCmd = &cobra.Command{
-	Use:   "restart [services...]",
-	Short: "Restart containers (down + up)",
+	Use:               "restart [services...]",
+	Short:             "Restart containers (down + up)",
+	ValidArgsFunction: completeServiceNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) > 0 {
 			// Restart specific services

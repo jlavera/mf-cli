@@ -7,8 +7,9 @@ import (
 )
 
 var rebuildCmd = &cobra.Command{
-	Use:   "rebuild [services...]",
-	Short: "Full rebuild: down + build --no-cache + up",
+	Use:               "rebuild [services...]",
+	Short:             "Full rebuild: down + build --no-cache + up",
+	ValidArgsFunction: completeServiceNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("Stopping containers...")
 		if err := comp.Down(); err != nil {

@@ -11,6 +11,7 @@ var shellCmd = &cobra.Command{
 	Short: "Open a shell in a container (default: backend service)",
 	Long: `Opens an interactive bash shell in the specified service container.
 If no service is specified, uses the backend service from config.`,
+	ValidArgsFunction: completeSingleServiceName,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		service := cfg.Services.Backend
 		if len(args) > 0 {

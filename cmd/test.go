@@ -32,6 +32,10 @@ func init() {
 	testCmd.Flags().StringVarP(&testFile, "file", "f", "", "specific test file to run")
 	testCmd.Flags().StringVarP(&testMethod, "method", "m", "", "specific test method (e.g. TestClass.test_method)")
 	testCmd.Flags().BoolVar(&testDebug, "debug", false, "run with debugpy (waits for VS Code/Cursor attach)")
+
+	// Register file completion for the --file flag
+	testCmd.RegisterFlagCompletionFunc("file", completeTestFiles)
+
 	rootCmd.AddCommand(testCmd)
 }
 

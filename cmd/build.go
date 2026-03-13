@@ -7,8 +7,9 @@ var (
 )
 
 var buildCmd = &cobra.Command{
-	Use:   "build [services...]",
-	Short: "Build containers",
+	Use:               "build [services...]",
+	Short:             "Build containers",
+	ValidArgsFunction: completeServiceNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return comp.Build(buildNoCache, args...)
 	},
