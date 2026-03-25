@@ -12,8 +12,14 @@ var rebuildCmd = &cobra.Command{
 	ValidArgsFunction: completeServiceNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("Stopping containers...")
-		if err := comp.Down(); err != nil {
-			return err
+		if len(args) > 0 {
+			if err := comp.Stop(args...); err != nil {
+				return err
+			}
+		} else {
+			if err := comp.Down(); err != nil {
+				return err
+			}
 		}
 		fmt.Println("Building (no cache)...")
 		if err := comp.Build(true, args...); err != nil {
@@ -25,5 +31,6 @@ var rebuildCmd = &cobra.Command{
 }
 
 func init() {
+	rebuildCmd.GroupID = "general"
 	rootCmd.AddCommand(rebuildCmd)
 }

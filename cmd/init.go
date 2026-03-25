@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,10 +33,8 @@ var (
 func init() {
 	initCmd.Flags().StringVarP(&initFile, "file", "f", "", "path to docker-compose file")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite existing mf.yaml without prompting")
-
-	// Register file completion for the --file flag (yml/yaml files)
 	initCmd.RegisterFlagCompletionFunc("file", completeComposeFiles)
-
+	initCmd.GroupID = "general"
 	rootCmd.AddCommand(initCmd)
 }
 
@@ -50,7 +49,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// 2. Check for existing mf.yaml
 	outputPath := config.DefaultConfigFile
 	if config.Exists(outputPath) && !initForce {
-		fmt.Printf("\n⚠️  %s already exists. Overwrite? [y/N] ", outputPath)
+		fmt.Printf("\n%s already exists. Overwrite? [y/N] ", outputPath)
 		reader := bufio.NewReader(os.Stdin)
 		answer, _ := reader.ReadString('\n')
 		answer = strings.TrimSpace(strings.ToLower(answer))
@@ -87,6 +86,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// 9. Print summary
 	printSummary(composePath, detected, outputPath)
 
+	// 10. Install shell completions
+	setupCompletions()
+
 	return nil
 }
 
@@ -120,10 +122,12 @@ func buildConfig(projectName, composeFileName string, detected []DetectedService
 				cfg.Services.Backend = ds.Name
 			}
 		case "db":
-			cfg.Services.DB = ds.Name
-			cfg.Database.Type = ds.ServiceType
-			cfg.Database.Name = ds.DBName
-			cfg.Database.User = ds.DBUser
+			cfg.Services.Databases = append(cfg.Services.Databases, config.DatabaseService{
+				Service: ds.Name,
+				Type:    ds.ServiceType,
+				DBName:  ds.DBName,
+				DBUser:  ds.DBUser,
+			})
 		case "redis":
 			cfg.Services.Redis = ds.Name
 		case "celery_worker", "celery_beat":
@@ -219,6 +223,149 @@ func hasCypressConfig(dir string) bool {
 		}
 	}
 	return false
+}
+
+// setupCompletions detects the current shell and installs mf completions.
+func setupCompletions() {
+	shell := filepath.Base(os.Getenv("SHELL"))
+
+	switch shell {
+	case "zsh":
+		installZshCompletions()
+	case "bash":
+		installBashCompletions()
+	case "fish":
+		installFishCompletions()
+	default:
+		fmt.Printf("\n💡 To enable tab completions, run: mf completion %s --help\n", shell)
+	}
+}
+
+func installZshCompletions() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	// Prefer Homebrew's site-functions dir — already in fpath, no .zshrc changes needed.
+	dest, noRcNeeded := zshCompletionDest(home)
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		fmt.Printf("\n⚠️  Could not create completions dir: %v\n", err)
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := rootCmd.GenZshCompletion(&buf); err != nil {
+		return
+	}
+	if err := os.WriteFile(dest, buf.Bytes(), 0644); err != nil {
+		fmt.Printf("\n⚠️  Could not write completion file: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\n✅ Installed zsh completions → %s\n", dest)
+
+	if noRcNeeded {
+		fmt.Println("   No shell config changes needed. Reload your shell to activate.")
+		return
+	}
+
+	// ~/.zsh/completions fallback: check if fpath entry is already in ~/.zshrc
+	compDir := filepath.Dir(dest)
+	zshrc := filepath.Join(home, ".zshrc")
+	if !fileContains(zshrc, compDir) {
+		fmt.Printf("   Add to ~/.zshrc:\n")
+		fmt.Printf("     fpath=(%s $fpath)\n", compDir)
+		fmt.Printf("     autoload -U compinit && compinit\n")
+		fmt.Printf("   Then: source ~/.zshrc\n")
+	} else {
+		fmt.Println("   Reload your shell or run: source ~/.zshrc")
+	}
+}
+
+// zshCompletionDest returns the best destination for the zsh completion file.
+// It prefers Homebrew's site-functions (already in fpath, no .zshrc edits needed).
+// Returns (path, noRcNeeded).
+func zshCompletionDest(home string) (string, bool) {
+	brewPrefixes := []string{"/opt/homebrew", "/usr/local"}
+	for _, prefix := range brewPrefixes {
+		dir := filepath.Join(prefix, "share", "zsh", "site-functions")
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			return filepath.Join(dir, "_mf"), true
+		}
+	}
+	return filepath.Join(home, ".zsh", "completions", "_mf"), false
+}
+
+func installBashCompletions() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	compDir := filepath.Join(home, ".bash_completion.d")
+	if err := os.MkdirAll(compDir, 0755); err != nil {
+		fmt.Printf("\n⚠️  Could not create %s: %v\n", compDir, err)
+		return
+	}
+
+	dest := filepath.Join(compDir, "mf")
+	var buf bytes.Buffer
+	if err := rootCmd.GenBashCompletion(&buf); err != nil {
+		return
+	}
+	if err := os.WriteFile(dest, buf.Bytes(), 0644); err != nil {
+		fmt.Printf("\n⚠️  Could not write completion file: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\n✅ Installed bash completions → %s\n", dest)
+
+	bashrc := filepath.Join(home, ".bashrc")
+	sourceLine := fmt.Sprintf("source %s", dest)
+	if !fileContains(bashrc, sourceLine) {
+		fmt.Printf("   Add to ~/.bashrc:\n")
+		fmt.Printf("     %s\n", sourceLine)
+		fmt.Printf("   Then: source ~/.bashrc\n")
+	} else {
+		fmt.Println("   Reload your shell or run: source ~/.bashrc")
+	}
+}
+
+func installFishCompletions() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	compDir := filepath.Join(home, ".config", "fish", "completions")
+	if err := os.MkdirAll(compDir, 0755); err != nil {
+		fmt.Printf("\n⚠️  Could not create %s: %v\n", compDir, err)
+		return
+	}
+
+	dest := filepath.Join(compDir, "mf.fish")
+	var buf bytes.Buffer
+	if err := rootCmd.GenFishCompletion(&buf, true); err != nil {
+		return
+	}
+	if err := os.WriteFile(dest, buf.Bytes(), 0644); err != nil {
+		fmt.Printf("\n⚠️  Could not write completion file: %v\n", err)
+		return
+	}
+
+	fmt.Printf("\n✅ Installed fish completions → %s\n", dest)
+	fmt.Println("   Completions are active in new shell sessions.")
+}
+
+// fileContains reports whether the file at path contains the given substring.
+func fileContains(path, substr string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), substr)
 }
 
 // printSummary outputs what was detected.

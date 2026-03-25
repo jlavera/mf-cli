@@ -9,13 +9,30 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// completeDatabaseServiceNames returns configured database service names for `mf psql` completion.
+func completeDatabaseServiceNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 || cfg == nil {
+		return []string{}, cobra.ShellCompDirectiveNoFileComp
+	}
+	var names []string
+	for _, db := range cfg.Services.Databases {
+		if strings.HasPrefix(db.Service, toComplete) {
+			names = append(names, db.Service)
+		}
+	}
+	if names == nil {
+		return []string{}, cobra.ShellCompDirectiveNoFileComp
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
 // completeServiceNames returns all service names from the docker-compose file
 // for shell autocompletion. It reads the compose file directly so completions
 // work even before running a command.
 func completeServiceNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	services := getComposeServiceNames()
 	if services == nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+		return []string{}, cobra.ShellCompDirectiveNoFileComp
 	}
 
 	// Filter out services already provided as args
@@ -31,15 +48,17 @@ func completeServiceNames(cmd *cobra.Command, args []string, toComplete string) 
 		}
 	}
 
+	if completions == nil {
+		return []string{}, cobra.ShellCompDirectiveNoFileComp
+	}
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
 // completeSingleServiceName completes a single service name (for commands
 // that take exactly one service argument like `mf shell`).
 func completeSingleServiceName(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	// Only complete for the first argument
 	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+		return []string{}, cobra.ShellCompDirectiveNoFileComp
 	}
 	return completeServiceNames(cmd, args, toComplete)
 }
@@ -63,9 +82,7 @@ func completeComposeFiles(cmd *cobra.Command, args []string, toComplete string) 
 
 // completeE2EProjects returns known Playwright project name suggestions.
 func completeE2EProjects(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	// Try to parse playwright config for project names. For now, return
-	// a directive that allows free-form text (no file completion).
-	return nil, cobra.ShellCompDirectiveNoFileComp
+	return []string{}, cobra.ShellCompDirectiveNoFileComp
 }
 
 // getComposeServiceNames reads the compose file and returns all service names.

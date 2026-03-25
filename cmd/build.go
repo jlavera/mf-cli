@@ -17,5 +17,6 @@ var buildCmd = &cobra.Command{
 
 func init() {
 	buildCmd.Flags().BoolVar(&buildNoCache, "no-cache", false, "build without cache")
+	buildCmd.GroupID = "general"
 	rootCmd.AddCommand(buildCmd)
 }

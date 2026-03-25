@@ -39,5 +39,6 @@ var preCommitCmd = &cobra.Command{
 func init() {
 	preCommitCmd.Flags().BoolVar(&preCommitAll, "all", false, "run on all files")
 	preCommitCmd.Flags().BoolVar(&preCommitLocal, "local", false, "run local pre-commit script (in Docker)")
+	preCommitCmd.GroupID = "general"
 	rootCmd.AddCommand(preCommitCmd)
 }

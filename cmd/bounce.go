@@ -6,8 +6,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var restartCmd = &cobra.Command{
-	Use:               "restart [services...]",
+var bounceCmd = &cobra.Command{
+	Use:               "bounce [services...]",
 	Short:             "Restart containers (down + up)",
 	ValidArgsFunction: completeServiceNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -26,5 +26,6 @@ var restartCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(restartCmd)
+	bounceCmd.GroupID = "general"
+	rootCmd.AddCommand(bounceCmd)
 }

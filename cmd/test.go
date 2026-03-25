@@ -36,6 +36,7 @@ func init() {
 	// Register file completion for the --file flag
 	testCmd.RegisterFlagCompletionFunc("file", completeTestFiles)
 
+	testCmd.GroupID = "general"
 	rootCmd.AddCommand(testCmd)
 }
 

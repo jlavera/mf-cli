@@ -12,5 +12,6 @@ var upCmd = &cobra.Command{
 }
 
 func init() {
+	upCmd.GroupID = "general"
 	rootCmd.AddCommand(upCmd)
 }

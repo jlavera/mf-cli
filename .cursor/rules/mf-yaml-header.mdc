@@ -1,0 +1,13 @@
+---
+description: Keep the mf.yaml header comment in sync with CLI commands
+globs: cmd/*.go
+alwaysApply: false
+---
+
+# mf.yaml Header Comment Sync
+
+The `header` constant in `internal/config/config.go` is prepended to every generated `mf.yaml`. It must stay in sync with the actual CLI commands.
+
+**When adding, removing, or renaming a command in `cmd/`:**
+- Update the `header` constant in `internal/config/config.go` to reflect the change.
+- Keep the format consistent: `mf <command> [args]   description`

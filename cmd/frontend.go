@@ -135,6 +135,7 @@ func init() {
 	frontendCmd.AddCommand(frontendTypeCheckCmd)
 	frontendCmd.AddCommand(frontendCheckAllCmd)
 	frontendCmd.AddCommand(frontendRestartCmd)
+	frontendCmd.GroupID = "stack"
 	rootCmd.AddCommand(frontendCmd)
 }
 

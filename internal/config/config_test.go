@@ -50,16 +50,16 @@ func TestLoadFullConfig(t *testing.T) {
 compose_file: compose.yml
 services:
   backend: api
-  db: postgres
+  databases:
+    - service: postgres
+      type: postgres
+      db_name: mydb
+      db_user: admin
   redis: cache
   workers:
     - worker1
     - worker2
   flower: monitor
-database:
-  type: postgres
-  name: mydb
-  user: admin
 frontend:
   path: ./client
   package_manager: yarn
@@ -97,11 +97,14 @@ test:
 	if len(cfg.Services.Workers) != 2 {
 		t.Errorf("workers: expected 2, got %d", len(cfg.Services.Workers))
 	}
-	if cfg.Database.Type != "postgres" {
-		t.Errorf("db type: got %q", cfg.Database.Type)
+	if len(cfg.Services.Databases) != 1 {
+		t.Errorf("databases: expected 1, got %d", len(cfg.Services.Databases))
 	}
-	if cfg.Database.Name != "mydb" {
-		t.Errorf("db name: got %q", cfg.Database.Name)
+	if cfg.Services.Databases[0].Type != "postgres" {
+		t.Errorf("db type: got %q", cfg.Services.Databases[0].Type)
+	}
+	if cfg.Services.Databases[0].DBName != "mydb" {
+		t.Errorf("db name: got %q", cfg.Services.Databases[0].DBName)
 	}
 	if cfg.Frontend.Path != "./client" {
 		t.Errorf("frontend path: got %q", cfg.Frontend.Path)
@@ -148,12 +151,9 @@ func TestWriteAndReadback(t *testing.T) {
 		ComposeFile: "docker-compose.yml",
 		Services: ServicesConfig{
 			Backend: "web",
-			DB:      "db",
-		},
-		Database: DatabaseConfig{
-			Type: "postgres",
-			Name: "testdb",
-			User: "testuser",
+			Databases: []DatabaseService{
+				{Service: "db", Type: "postgres", DBName: "testdb", DBUser: "testuser"},
+			},
 		},
 	}
 
@@ -169,8 +169,8 @@ func TestWriteAndReadback(t *testing.T) {
 	if loaded.Project != "roundtrip" {
 		t.Errorf("roundtrip project: got %q", loaded.Project)
 	}
-	if loaded.Database.Name != "testdb" {
-		t.Errorf("roundtrip db name: got %q", loaded.Database.Name)
+	if len(loaded.Services.Databases) != 1 || loaded.Services.Databases[0].DBName != "testdb" {
+		t.Errorf("roundtrip db name: got %+v", loaded.Services.Databases)
 	}
 }
 

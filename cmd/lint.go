@@ -58,6 +58,9 @@ var formatAllCmd = &cobra.Command{
 }
 
 func init() {
+	lintCmd.GroupID = "general"
+	sortImportsCmd.GroupID = "general"
+	formatAllCmd.GroupID = "general"
 	rootCmd.AddCommand(lintCmd)
 	rootCmd.AddCommand(sortImportsCmd)
 	rootCmd.AddCommand(formatAllCmd)

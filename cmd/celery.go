@@ -81,8 +81,10 @@ func init() {
 	celeryCmd.AddCommand(celeryStopCmd)
 	celeryCmd.AddCommand(celeryRestartCmd)
 	celeryCmd.AddCommand(celeryLogsCmd)
+	celeryCmd.GroupID = "stack"
 	rootCmd.AddCommand(celeryCmd)
 
 	flowerCmd.AddCommand(flowerLogsCmd)
+	flowerCmd.GroupID = "stack"
 	rootCmd.AddCommand(flowerCmd)
 }

@@ -1,0 +1,38 @@
+version: 2
+
+project_name: mf
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    main: .
+    binary: mf
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - none*
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: jlavera
+    name: mf-cli
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"

@@ -40,5 +40,6 @@ Use --check to verify formatting without making changes.`,
 
 func init() {
 	formatCmd.Flags().BoolVar(&formatCheck, "check", false, "check formatting without making changes")
+	formatCmd.GroupID = "general"
 	rootCmd.AddCommand(formatCmd)
 }

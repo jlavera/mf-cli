@@ -12,5 +12,6 @@ var stopCmd = &cobra.Command{
 }
 
 func init() {
+	stopCmd.GroupID = "general"
 	rootCmd.AddCommand(stopCmd)
 }

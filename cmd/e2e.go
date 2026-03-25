@@ -135,6 +135,7 @@ func init() {
 	e2eCmd.AddCommand(e2eHeadedCmd)
 	e2eCmd.AddCommand(e2eDebugCmd)
 	e2eCmd.AddCommand(e2eReportCmd)
+	e2eCmd.GroupID = "stack"
 	rootCmd.AddCommand(e2eCmd)
 }
 

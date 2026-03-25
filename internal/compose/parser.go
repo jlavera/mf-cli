@@ -246,12 +246,12 @@ func matchImage(imageName string, envVars map[string]string, ds *DetectedService
 				// Extract env var mappings
 				for envKey, field := range m.EnvMappings {
 					if val, ok := envVars[envKey]; ok {
-						switch field {
-						case "db_name":
-							ds.DBName = val
-						case "db_user":
-							ds.DBUser = val
-						}
+				switch field {
+					case "db_name":
+						ds.DBName = stripEnvInterpolation(val)
+					case "db_user":
+						ds.DBUser = stripEnvInterpolation(val)
+					}
 					}
 				}
 				return true
@@ -416,6 +416,27 @@ func extractHostPort(portMapping string) string {
 		return parts[0]
 	}
 	return portMapping
+}
+
+// stripEnvInterpolation extracts the default value from bash-style variable
+// interpolation. Examples:
+//   - "${DB_NAME:-mydb}"  → "mydb"
+//   - "${DB_NAME-mydb}"   → "mydb"
+//   - "${DB_NAME}"        → ""
+//   - "mydb"              → "mydb"
+func stripEnvInterpolation(val string) string {
+	s := strings.TrimSpace(val)
+	if !strings.HasPrefix(s, "${") || !strings.HasSuffix(s, "}") {
+		return s
+	}
+	inner := s[2 : len(s)-1] // strip ${ and }
+	if idx := strings.Index(inner, ":-"); idx >= 0 {
+		return inner[idx+2:]
+	}
+	if idx := strings.Index(inner, "-"); idx >= 0 {
+		return inner[idx+1:]
+	}
+	return ""
 }
 
 // extractCommandString combines command and entrypoint into a single string for matching.

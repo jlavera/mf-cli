@@ -10,14 +10,21 @@ import (
 )
 
 var (
-	cfgFile string
-	cfg     *config.Config
-	comp    *compose.Compose
+	cfgFile    string
+	cfg        *config.Config
+	comp       *compose.Compose
+	appVersion = "dev"
 )
 
+// SetVersion is called from main to inject the build-time version.
+func SetVersion(v string) {
+	appVersion = v
+	rootCmd.Version = v
+}
+
 var rootCmd = &cobra.Command{
-	Use:   "mf",
-	Short: "mf — a CLI for docker-compose based projects",
+	Use:          "mf",
+	Short:        "mf — a CLI for docker-compose based projects",
 	Long: `mf is a project CLI that wraps docker-compose with sensible
 defaults and organized subcommands. Configure it with an mf.yaml
 file in your project root (run 'mf init' to generate one).`,
@@ -28,9 +35,11 @@ file in your project root (run 'mf init' to generate one).`,
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", config.DefaultConfigFile, "config file path")
 
-	// Load config before any command that needs it.
-	// Commands that don't need config (like init) set their own annotation
-	// to skip this.
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "general", Title: "General Commands:"},
+		&cobra.Group{ID: "stack", Title: "Stack Commands:"},
+	)
+
 	cobra.OnInitialize(loadConfig)
 }
 

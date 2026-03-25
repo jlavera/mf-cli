@@ -11,5 +11,6 @@ var cleanCmd = &cobra.Command{
 }
 
 func init() {
+	cleanCmd.GroupID = "general"
 	rootCmd.AddCommand(cleanCmd)
 }

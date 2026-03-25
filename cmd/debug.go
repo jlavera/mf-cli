@@ -47,5 +47,6 @@ var debugCleanCmd = &cobra.Command{
 func init() {
 	debugCmd.AddCommand(debugCheckCmd)
 	debugCmd.AddCommand(debugCleanCmd)
+	debugCmd.GroupID = "general"
 	rootCmd.AddCommand(debugCmd)
 }
