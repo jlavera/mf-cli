@@ -31,6 +31,16 @@ func RunInDir(dir string, name string, args ...string) error {
 	return nil
 }
 
+// Output executes a command and returns its combined stdout as a string.
+func Output(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("command failed: %s %v: %w", name, args, err)
+	}
+	return string(out), nil
+}
+
 // Interactive executes a command replacing the current process (for truly interactive
 // commands like shell/psql where we need full TTY control).
 // Falls back to Run if exec is not available.

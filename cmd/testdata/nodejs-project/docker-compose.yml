@@ -1,0 +1,15 @@
+services:
+  api:
+    build: ./api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: nodeapp
+      POSTGRES_USER: nodeuser
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"

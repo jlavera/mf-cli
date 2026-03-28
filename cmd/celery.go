@@ -15,9 +15,9 @@ var celeryStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start Celery workers",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		workers := cfg.Services.Workers
+		workers := cfg.Workers()
 		if len(workers) == 0 {
-			return fmt.Errorf("no worker services configured — set services.workers in mf.yaml")
+			return fmt.Errorf("no worker services configured — add services with type: celery_worker in mf.yaml")
 		}
 		return comp.Up(workers...)
 	},
@@ -27,9 +27,9 @@ var celeryStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop Celery workers",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		workers := cfg.Services.Workers
+		workers := cfg.Workers()
 		if len(workers) == 0 {
-			return fmt.Errorf("no worker services configured — set services.workers in mf.yaml")
+			return fmt.Errorf("no worker services configured — add services with type: celery_worker in mf.yaml")
 		}
 		return comp.Stop(workers...)
 	},
@@ -39,9 +39,9 @@ var celeryRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Restart Celery workers",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		workers := cfg.Services.Workers
+		workers := cfg.Workers()
 		if len(workers) == 0 {
-			return fmt.Errorf("no worker services configured — set services.workers in mf.yaml")
+			return fmt.Errorf("no worker services configured — add services with type: celery_worker in mf.yaml")
 		}
 		return comp.Restart(workers...)
 	},
@@ -51,9 +51,9 @@ var celeryLogsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "View Celery worker logs",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		workers := cfg.Services.Workers
+		workers := cfg.Workers()
 		if len(workers) == 0 {
-			return fmt.Errorf("no worker services configured — set services.workers in mf.yaml")
+			return fmt.Errorf("no worker services configured — add services with type: celery_worker in mf.yaml")
 		}
 		return comp.Logs(workers...)
 	},
@@ -68,9 +68,9 @@ var flowerLogsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "View Flower logs",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		service := cfg.Services.Flower
+		service := cfg.Flower()
 		if service == "" {
-			return fmt.Errorf("no flower service configured — set services.flower in mf.yaml")
+			return fmt.Errorf("no flower service configured — add a service with type: flower in mf.yaml")
 		}
 		return comp.Logs(service)
 	},

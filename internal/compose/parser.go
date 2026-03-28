@@ -1,8 +1,10 @@
 package compose
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -27,10 +29,9 @@ type ComposeService struct {
 // DetectedService holds the classification result for a compose service.
 type DetectedService struct {
 	Name        string
-	Role        string // backend, db, redis, celery_worker, flower, frontend, proxy, mail, etc.
-	ServiceType string // postgres, mysql, redis, etc.
-	DBName      string // database name (if role=db)
-	DBUser      string // database user (if role=db)
+	ServiceType string // python, nodejs, postgres, mysql, redis, celery_worker, flower, proxy, …
+	DBName      string
+	DBUser      string
 	BuildCtx    string // build context path if applicable
 	Ports       []string
 }
@@ -42,8 +43,7 @@ type DetectedService struct {
 // ImageMatcher defines how to recognize a service from its Docker image name.
 type ImageMatcher struct {
 	Patterns    []string          // image name prefixes to match
-	Role        string            // detected role
-	ServiceType string            // sub-type (e.g. "postgres")
+	ServiceType string            // detected type (e.g. "postgres", "redis")
 	EnvMappings map[string]string // env var → DetectedService field
 }
 
@@ -52,59 +52,48 @@ type ImageMatcher struct {
 var DefaultMatchers = []ImageMatcher{
 	{
 		Patterns:    []string{"postgres", "bitnami/postgresql"},
-		Role:        "db",
 		ServiceType: "postgres",
 		EnvMappings: map[string]string{"POSTGRES_DB": "db_name", "POSTGRES_USER": "db_user"},
 	},
 	{
 		Patterns:    []string{"mysql", "mariadb", "bitnami/mysql", "bitnami/mariadb"},
-		Role:        "db",
 		ServiceType: "mysql",
 		EnvMappings: map[string]string{"MYSQL_DATABASE": "db_name", "MYSQL_USER": "db_user"},
 	},
 	{
 		Patterns:    []string{"mongo", "bitnami/mongodb"},
-		Role:        "db",
 		ServiceType: "mongo",
 	},
 	{
 		Patterns:    []string{"redis", "bitnami/redis", "valkey"},
-		Role:        "redis",
 		ServiceType: "redis",
 	},
 	{
 		Patterns:    []string{"rabbitmq", "bitnami/rabbitmq"},
-		Role:        "rabbitmq",
 		ServiceType: "rabbitmq",
 	},
 	{
 		Patterns:    []string{"elasticsearch", "opensearch", "bitnami/elasticsearch"},
-		Role:        "search",
 		ServiceType: "elasticsearch",
 	},
 	{
 		Patterns:    []string{"nginx", "traefik", "caddy", "envoyproxy"},
-		Role:        "proxy",
 		ServiceType: "proxy",
 	},
 	{
 		Patterns:    []string{"mailhog", "mailpit", "axllent/mailpit"},
-		Role:        "mail",
 		ServiceType: "mail",
 	},
 	{
 		Patterns:    []string{"minio", "localstack"},
-		Role:        "storage",
 		ServiceType: "storage",
 	},
 	{
 		Patterns:    []string{"mher/flower"},
-		Role:        "flower",
 		ServiceType: "flower",
 	},
 	{
 		Patterns:    []string{"memcached", "bitnami/memcached"},
-		Role:        "cache",
 		ServiceType: "memcached",
 	},
 }
@@ -161,8 +150,10 @@ func ParseComposeFile(path string) (*ComposeFile, error) {
 // Classification
 // ---------------------------------------------------------------------------
 
-// ClassifyServices analyzes each service in the compose file and assigns roles.
-func ClassifyServices(cf *ComposeFile) []DetectedService {
+// ClassifyServices analyzes each service in the compose file and assigns types.
+// baseDir is the directory containing the compose file, used to resolve
+// Dockerfile paths for build-context services.
+func ClassifyServices(cf *ComposeFile, baseDir string) []DetectedService {
 	var results []DetectedService
 
 	for name, svc := range cf.Services {
@@ -171,7 +162,6 @@ func ClassifyServices(cf *ComposeFile) []DetectedService {
 			Ports: extractPorts(svc.Ports),
 		}
 
-		// Extract build context
 		ds.BuildCtx = extractBuildContext(svc.Build)
 
 		// Step 1: Try image-based matching using the registry
@@ -183,12 +173,11 @@ func ClassifyServices(cf *ComposeFile) []DetectedService {
 			}
 		}
 
-		// Step 2: Command-based detection (for services with build context)
+		// Step 2: Command-based detection (celery worker/beat/flower)
 		cmdStr := extractCommandString(svc.Command, svc.Entrypoint)
 		if cmdStr != "" {
-			if role := matchCommand(cmdStr); role != "" {
-				ds.Role = role
-				ds.ServiceType = role
+			if celeryType := matchCommand(cmdStr); celeryType != "" {
+				ds.ServiceType = celeryType
 				results = append(results, ds)
 				continue
 			}
@@ -198,36 +187,44 @@ func ClassifyServices(cf *ComposeFile) []DetectedService {
 		nameLower := strings.ToLower(name)
 		if strings.Contains(nameLower, "celery") || strings.Contains(nameLower, "worker") {
 			if strings.Contains(nameLower, "flower") {
-				ds.Role = "flower"
 				ds.ServiceType = "flower"
 			} else if strings.Contains(nameLower, "beat") {
-				ds.Role = "celery_beat"
 				ds.ServiceType = "celery_beat"
 			} else {
-				ds.Role = "celery_worker"
 				ds.ServiceType = "celery_worker"
 			}
 			results = append(results, ds)
 			continue
 		}
 		if strings.Contains(nameLower, "flower") {
-			ds.Role = "flower"
 			ds.ServiceType = "flower"
 			results = append(results, ds)
 			continue
 		}
 
-		// Step 4: Port-based fallback for build services
+		// Step 4: Build services — detect tech from command, image, or Dockerfile
 		if ds.BuildCtx != "" {
-			ds.Role = classifyByPorts(ds.Ports)
-			ds.ServiceType = ds.Role
+			ds.ServiceType = detectTechFromCommand(cmdStr)
+			if ds.ServiceType == "" {
+				ds.ServiceType = detectTechFromImage(imageName)
+			}
+			if ds.ServiceType == "" && baseDir != "" {
+				dfName := extractDockerfilePath(svc.Build)
+				dfPath := filepath.Join(baseDir, ds.BuildCtx, dfName)
+				ds.ServiceType = readDockerfileBaseImage(dfPath)
+			}
 			results = append(results, ds)
 			continue
 		}
 
-		// Step 5: Unknown
-		ds.Role = "unknown"
-		ds.ServiceType = "unknown"
+		// Step 5: Image-only services that didn't match the registry
+		if imageName != "" {
+			ds.ServiceType = detectTechFromImage(imageName)
+			results = append(results, ds)
+			continue
+		}
+
+		// Step 6: Unknown
 		results = append(results, ds)
 	}
 
@@ -235,23 +232,20 @@ func ClassifyServices(cf *ComposeFile) []DetectedService {
 }
 
 // matchImage tries to match the image against the DefaultMatchers registry.
-// Returns true if a match was found.
 func matchImage(imageName string, envVars map[string]string, ds *DetectedService) bool {
 	for _, m := range DefaultMatchers {
 		for _, pattern := range m.Patterns {
 			if imageMatchesPattern(imageName, pattern) {
-				ds.Role = m.Role
 				ds.ServiceType = m.ServiceType
 
-				// Extract env var mappings
 				for envKey, field := range m.EnvMappings {
 					if val, ok := envVars[envKey]; ok {
-				switch field {
-					case "db_name":
-						ds.DBName = stripEnvInterpolation(val)
-					case "db_user":
-						ds.DBUser = stripEnvInterpolation(val)
-					}
+						switch field {
+						case "db_name":
+							ds.DBName = stripEnvInterpolation(val)
+						case "db_user":
+							ds.DBUser = stripEnvInterpolation(val)
+						}
 					}
 				}
 				return true
@@ -283,6 +277,64 @@ func imageMatchesPattern(imageName, pattern string) bool {
 	return lastPart == pattern
 }
 
+// detectTechFromCommand infers the technology from a command/entrypoint string.
+func detectTechFromCommand(cmdStr string) string {
+	if cmdStr == "" {
+		return ""
+	}
+	lower := strings.ToLower(cmdStr)
+	for _, kw := range []string{"python", "manage.py", "gunicorn", "uvicorn", "django", "flask", "celery", "pytest", "pip"} {
+		if strings.Contains(lower, kw) {
+			return "python"
+		}
+	}
+	for _, kw := range []string{"node", "npm", "yarn", "pnpm", "next", "vite", "nuxt", "nest", "tsx", "ts-node"} {
+		if strings.Contains(lower, kw) {
+			return "nodejs"
+		}
+	}
+	for _, kw := range []string{"ruby", "rails", "bundle", "rake"} {
+		if strings.Contains(lower, kw) {
+			return "ruby"
+		}
+	}
+	for _, kw := range []string{"java", "gradle", "mvn", "spring"} {
+		if strings.Contains(lower, kw) {
+			return "java"
+		}
+	}
+	return ""
+}
+
+// detectTechFromImage infers the technology from a Docker image name.
+func detectTechFromImage(imageName string) string {
+	if imageName == "" {
+		return ""
+	}
+	lower := strings.ToLower(imageName)
+	for _, kw := range []string{"python", "django", "flask"} {
+		if strings.Contains(lower, kw) {
+			return "python"
+		}
+	}
+	for _, kw := range []string{"node", "deno", "bun"} {
+		if strings.Contains(lower, kw) {
+			return "nodejs"
+		}
+	}
+	for _, kw := range []string{"ruby", "rails"} {
+		if strings.Contains(lower, kw) {
+			return "ruby"
+		}
+	}
+	for _, kw := range []string{"golang", "go:"} {
+		if strings.Contains(lower, kw) {
+			return "go"
+		}
+	}
+	return ""
+}
+
 // matchCommand detects service roles from command/entrypoint strings.
 func matchCommand(cmdStr string) string {
 	lower := strings.ToLower(cmdStr)
@@ -302,26 +354,6 @@ func matchCommand(cmdStr string) string {
 	}
 
 	return ""
-}
-
-// classifyByPorts guesses a service role based on exposed ports.
-func classifyByPorts(ports []string) string {
-	backendPorts := map[string]bool{"8000": true, "8080": true, "5000": true, "4000": true, "3000": true}
-	frontendPorts := map[string]bool{"5173": true, "4200": true, "3001": true}
-
-	for _, p := range ports {
-		hostPort := extractHostPort(p)
-		if frontendPorts[hostPort] {
-			return "frontend"
-		}
-	}
-	for _, p := range ports {
-		hostPort := extractHostPort(p)
-		if backendPorts[hostPort] {
-			return "backend"
-		}
-	}
-	return "app"
 }
 
 // ---------------------------------------------------------------------------
@@ -349,6 +381,56 @@ func extractBuildContext(build interface{}) string {
 		}
 	}
 	return "."
+}
+
+// extractDockerfilePath returns the dockerfile name from the build field.
+// Defaults to "Dockerfile" when a build directive exists.
+func extractDockerfilePath(build interface{}) string {
+	if build == nil {
+		return ""
+	}
+	if m, ok := build.(map[string]interface{}); ok {
+		if df, ok := m["dockerfile"]; ok {
+			if s, ok := df.(string); ok {
+				return s
+			}
+		}
+	}
+	return "Dockerfile"
+}
+
+// readDockerfileBaseImage reads a Dockerfile and returns the base image from
+// the first FROM instruction that matches a known technology. For multi-stage
+// builds (e.g. FROM node:20 AS builder / FROM nginx:alpine) the first
+// technology-matching stage wins, which is typically the one that reveals the
+// project's language.
+func readDockerfileBaseImage(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		upper := strings.ToUpper(line)
+		if !strings.HasPrefix(upper, "FROM ") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+		image := parts[1]
+		if tech := detectTechFromImage(image); tech != "" {
+			return tech
+		}
+	}
+	return ""
 }
 
 // extractEnvMap converts the environment field to a map.

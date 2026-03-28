@@ -17,12 +17,12 @@ var shellCmd = &cobra.Command{
 If no service is specified, uses the backend service from config.`,
 	ValidArgsFunction: completeSingleServiceName,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		service := cfg.Services.Backend
+		service := cfg.Backend()
 		if len(args) > 0 {
 			service = args[0]
 		}
 		if service == "" {
-			return fmt.Errorf("no backend service configured — specify a service name or set services.backend in mf.yaml")
+			return fmt.Errorf("no backend service configured — specify a service name or add a service with type: python in mf.yaml")
 		}
 		return execShell(service)
 	},
@@ -33,27 +33,28 @@ var psqlCmd = &cobra.Command{
 	Short:             "Open a database shell",
 	ValidArgsFunction: completeDatabaseServiceNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(cfg.Services.Databases) == 0 {
-			return fmt.Errorf("no databases configured — set services.databases in mf.yaml")
+		dbs := cfg.Databases()
+		if len(dbs) == 0 {
+			return fmt.Errorf("no databases configured — add a service with type: postgres in mf.yaml")
 		}
 
-		var db *config.DatabaseService
+		var db *config.Service
 		if len(args) > 0 {
-			for i, d := range cfg.Services.Databases {
-				if d.Service == args[0] {
-					db = &cfg.Services.Databases[i]
+			for i, d := range dbs {
+				if d.Name == args[0] {
+					db = &dbs[i]
 					break
 				}
 			}
 			if db == nil {
 				return fmt.Errorf("database service %q not found in mf.yaml", args[0])
 			}
-		} else if len(cfg.Services.Databases) == 1 {
-			db = &cfg.Services.Databases[0]
+		} else if len(dbs) == 1 {
+			db = &dbs[0]
 		} else {
-			names := make([]string, len(cfg.Services.Databases))
-			for i, d := range cfg.Services.Databases {
-				names[i] = d.Service
+			names := make([]string, len(dbs))
+			for i, d := range dbs {
+				names[i] = d.Name
 			}
 			return fmt.Errorf("multiple databases configured — specify one: mf psql <%s>", strings.Join(names, "|"))
 		}
@@ -67,7 +68,7 @@ var psqlCmd = &cobra.Command{
 			if db.DBName != "" {
 				shellArgs = append(shellArgs, "-d", db.DBName)
 			}
-			return comp.Exec(db.Service, shellArgs...)
+			return comp.Exec(db.Name, shellArgs...)
 		case "mysql":
 			shellArgs := []string{"mysql"}
 			if db.DBUser != "" {
@@ -76,11 +77,11 @@ var psqlCmd = &cobra.Command{
 			if db.DBName != "" {
 				shellArgs = append(shellArgs, db.DBName)
 			}
-			return comp.Exec(db.Service, shellArgs...)
+			return comp.Exec(db.Name, shellArgs...)
 		case "mongo":
-			return comp.Exec(db.Service, "mongosh")
+			return comp.Exec(db.Name, "mongosh")
 		default:
-			return fmt.Errorf("unsupported database type %q for service %q", db.Type, db.Service)
+			return fmt.Errorf("unsupported database type %q for service %q", db.Type, db.Name)
 		}
 	},
 }
@@ -90,12 +91,12 @@ var redisCliCmd = &cobra.Command{
 	Short:             "Open redis-cli in a Redis container",
 	ValidArgsFunction: completeSingleServiceName,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		service := cfg.Services.Redis
+		service := cfg.Redis()
 		if len(args) > 0 {
 			service = args[0]
 		}
 		if service == "" {
-			return fmt.Errorf("no redis service configured — specify a service name or set services.redis in mf.yaml")
+			return fmt.Errorf("no redis service configured — specify a service name or add a service with type: redis in mf.yaml")
 		}
 		return comp.Exec(service, "redis-cli")
 	},

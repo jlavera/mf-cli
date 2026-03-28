@@ -8,25 +8,31 @@ project: my-project
 # Docker Compose file to use (default: docker-compose.yml)
 compose_file: docker-compose.yml
 
-# Map docker-compose service names to roles
+# Services detected from docker-compose, each with a type.
+# The type determines how mf interacts with the service:
+#   App types (python, nodejs, ruby, java, go) → mf shell, mf test, mf format, mf lint
+#   DB types (postgres, mysql, mongo)          → mf psql
+#   redis                                      → mf redis-cli
+#   celery_worker, celery_beat                 → mf celery start/stop/restart/logs
+#   flower                                     → mf flower logs
+#   Services with path: set                    → mf run <service> <script>
 services:
-  backend: web              # Main backend service (used for shell, test, exec)
-  db: db                    # Database service
-  redis: redis              # Redis service
-  workers:                  # Background worker services
-    - celery_worker
-  flower: celery_flower     # Celery Flower monitoring
-
-# Database connection details (extracted from compose environment vars)
-database:
-  type: postgres            # postgres | mysql | mongo
-  name: mydb                # Database name
-  user: postgres            # Database user
-
-# Frontend project settings
-frontend:
-  path: ./frontend          # Relative path to frontend directory
-  package_manager: npm      # npm | yarn | pnpm
+  - name: web
+    type: python
+  - name: db
+    type: postgres
+    db_name: mydb
+    db_user: postgres
+  - name: redis
+    type: redis
+  - name: celery_worker
+    type: celery_worker
+  - name: celery_flower
+    type: flower
+  - name: frontend
+    type: nodejs
+    path: ./frontend
+    package_manager: npm
 
 # End-to-end testing settings
 e2e:

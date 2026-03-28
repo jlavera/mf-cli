@@ -10,14 +10,15 @@ import (
 
 	"github.com/jlavera/mf-cli/internal/compose"
 	"github.com/jlavera/mf-cli/internal/config"
+	"github.com/jlavera/mf-cli/internal/nodejs"
 	"github.com/spf13/cobra"
 )
 
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Scan a docker-compose file and generate mf.yaml",
-	Long: `Scans your docker-compose file, detects services and their roles,
-and generates an mf.yaml configuration file for the project.
+	Long: `Scans your docker-compose file, detects services and generates,
+an mf.yaml configuration file for the project.
 
 By default, looks for docker-compose.yml/yaml or compose.yml/yaml
 in the current directory. Use --file to specify a different path.`,
@@ -66,7 +67,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. Classify services
-	detected := compose.ClassifyServices(cf)
+	detected := compose.ClassifyServices(cf, filepath.Dir(composePath))
 
 	// 5. Derive project name from directory
 	cwd, _ := os.Getwd()
@@ -84,7 +85,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// 9. Print summary
-	printSummary(composePath, detected, outputPath)
+	printSummary(composePath, detected, newCfg, outputPath)
 
 	// 10. Install shell completions
 	setupCompletions()
@@ -116,59 +117,81 @@ func buildConfig(projectName, composeFileName string, detected []DetectedService
 	}
 
 	for _, ds := range detected {
-		switch ds.Role {
-		case "backend", "app":
-			if cfg.Services.Backend == "" {
-				cfg.Services.Backend = ds.Name
-			}
-		case "db":
-			cfg.Services.Databases = append(cfg.Services.Databases, config.DatabaseService{
-				Service: ds.Name,
-				Type:    ds.ServiceType,
-				DBName:  ds.DBName,
-				DBUser:  ds.DBUser,
-			})
-		case "redis":
-			cfg.Services.Redis = ds.Name
-		case "celery_worker", "celery_beat":
-			cfg.Services.Workers = append(cfg.Services.Workers, ds.Name)
-		case "flower":
-			cfg.Services.Flower = ds.Name
-		case "frontend":
-			if cfg.Services.Backend == "" {
-				// If no backend yet, this might be the main service
-				// Keep it noted but don't assign to backend
-			}
-			if ds.BuildCtx != "" && ds.BuildCtx != "." {
-				cfg.Frontend.Path = "./" + strings.TrimPrefix(ds.BuildCtx, "./")
-			}
+		svc := config.Service{
+			Name: ds.Name,
+			Type: ds.ServiceType,
 		}
+
+		svc.DBName = ds.DBName
+		svc.DBUser = ds.DBUser
+
+		// If the service has a non-root build context, record it as a local project path.
+		if ds.BuildCtx != "" && ds.BuildCtx != "." {
+			svc.Path = "./" + strings.TrimPrefix(ds.BuildCtx, "./")
+		}
+
+		cfg.Services = append(cfg.Services, svc)
 	}
 
 	return cfg
 }
 
-// detectProjectPaths scans the filesystem for frontend and e2e directories.
+// detectProjectPaths scans the filesystem for Node.js and e2e directories.
+// For each nodejs service, it tries to locate a package.json in common
+// locations (./<name>, ./apps/<name>, ./packages/<name>) and fills in
+// path/package_manager. Also scans well-known top-level directories for
+// additional Node.js projects not yet in the service list.
 func detectProjectPaths(cwd string, cfg *config.Config) {
-	// Detect frontend path if not already set from compose build context
-	if cfg.Frontend.Path == "" {
-		frontendDirs := []string{"frontend", "client", "web", "app"}
-		for _, dir := range frontendDirs {
-			path := filepath.Join(cwd, dir)
-			if hasPackageJSON(path) {
-				cfg.Frontend.Path = "./" + dir
+	// First pass: for each existing nodejs service, try to find its package.json
+	for i := range cfg.Services {
+		svc := &cfg.Services[i]
+		if svc.Path != "" {
+			continue
+		}
+		if svc.Type != "nodejs" {
+			continue
+		}
+		candidates := []string{
+			svc.Name,
+			"apps/" + svc.Name,
+			"packages/" + svc.Name,
+		}
+		for _, dir := range candidates {
+			absPath := filepath.Join(cwd, dir)
+			if nodejs.HasPackageJSON(absPath) {
+				svc.Path = "./" + dir
+				svc.PackageManager = nodejs.DetectPackageManager(absPath)
 				break
 			}
 		}
 	}
 
-	// Detect frontend package manager
-	if cfg.Frontend.Path != "" {
-		absPath := cfg.Frontend.Path
-		if !filepath.IsAbs(absPath) {
-			absPath = filepath.Join(cwd, absPath)
+	// Second pass: scan well-known top-level directories for projects not yet listed
+	nodeDirs := []string{"frontend", "client", "web", "app", "api", "server", "backend"}
+	for _, dir := range nodeDirs {
+		absPath := filepath.Join(cwd, dir)
+		if !nodejs.HasPackageJSON(absPath) {
+			continue
 		}
-		cfg.Frontend.PackageManager = detectPackageManager(absPath)
+		pm := nodejs.DetectPackageManager(absPath)
+		if svc := cfg.FindService(dir); svc != nil {
+			if svc.Path == "" {
+				svc.Path = "./" + dir
+			}
+			if svc.PackageManager == "" {
+				svc.PackageManager = pm
+			}
+			if svc.Type == "" {
+				svc.Type = "nodejs"
+			}
+		} else {
+			cfg.Services = append(cfg.Services, config.Service{
+				Name:           dir,
+				Type:           "nodejs",
+				Path:           "./" + dir,
+				PackageManager: pm,
+			})
+		}
 	}
 
 	// Detect e2e path
@@ -188,21 +211,6 @@ func detectProjectPaths(cwd string, cfg *config.Config) {
 			break
 		}
 	}
-}
-
-func hasPackageJSON(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, "package.json"))
-	return err == nil
-}
-
-func detectPackageManager(dir string) string {
-	if _, err := os.Stat(filepath.Join(dir, "pnpm-lock.yaml")); err == nil {
-		return "pnpm"
-	}
-	if _, err := os.Stat(filepath.Join(dir, "yarn.lock")); err == nil {
-		return "yarn"
-	}
-	return "npm"
 }
 
 func hasPlaywrightConfig(dir string) bool {
@@ -369,7 +377,7 @@ func fileContains(path, substr string) bool {
 }
 
 // printSummary outputs what was detected.
-func printSummary(composePath string, detected []DetectedService, outputPath string) {
+func printSummary(composePath string, detected []DetectedService, newCfg config.Config, outputPath string) {
 	fmt.Printf("\n✅ Scanned %s — found %d services\n\n", filepath.Base(composePath), len(detected))
 
 	maxName := 0
@@ -381,23 +389,25 @@ func printSummary(composePath string, detected []DetectedService, outputPath str
 
 	for _, ds := range detected {
 		extra := ""
-		switch ds.Role {
-		case "db":
-			parts := []string{ds.ServiceType}
+		switch ds.ServiceType {
+		case "postgres", "mysql", "mongo":
+			parts := []string{}
 			if ds.DBName != "" {
 				parts = append(parts, fmt.Sprintf("db: %s", ds.DBName))
 			}
 			if ds.DBUser != "" {
 				parts = append(parts, fmt.Sprintf("user: %s", ds.DBUser))
 			}
-			extra = fmt.Sprintf(" (%s)", strings.Join(parts, ", "))
-		case "backend":
-			extra = " (main service)"
-		case "app":
-			extra = " (app service)"
+			if len(parts) > 0 {
+				extra = fmt.Sprintf(" (%s)", strings.Join(parts, ", "))
+			}
 		}
 
-		fmt.Printf("  %-*s → %s%s\n", maxName, ds.Name, ds.Role, extra)
+		svcType := ds.ServiceType
+		if svcType == "" {
+			svcType = "unknown"
+		}
+		fmt.Printf("  %-*s → %s%s\n", maxName, ds.Name, svcType, extra)
 	}
 
 	fmt.Printf("\n✅ Generated %s\n", outputPath)

@@ -10,36 +10,105 @@ import (
 
 // Config represents the mf.yaml configuration file.
 type Config struct {
-	Project     string         `yaml:"project"`
-	ComposeFile string         `yaml:"compose_file"`
-	Services    ServicesConfig `yaml:"services"`
-	Frontend    FrontendConfig `yaml:"frontend,omitempty"`
-	E2E         E2EConfig      `yaml:"e2e,omitempty"`
-	Scripts     ScriptsConfig  `yaml:"scripts,omitempty"`
-	Test        TestConfig     `yaml:"test,omitempty"`
+	Project     string        `yaml:"project"`
+	ComposeFile string        `yaml:"compose_file"`
+	Services    []Service     `yaml:"services"`
+	E2E         E2EConfig     `yaml:"e2e,omitempty"`
+	Scripts     ScriptsConfig `yaml:"scripts,omitempty"`
+	Test        TestConfig    `yaml:"test,omitempty"`
 }
 
-// ServicesConfig maps roles to docker-compose service names.
-type ServicesConfig struct {
-	Backend   string            `yaml:"backend"`
-	Databases []DatabaseService `yaml:"databases,omitempty"`
-	Redis     string            `yaml:"redis,omitempty"`
-	Workers   []string          `yaml:"workers,omitempty"`
-	Flower    string            `yaml:"flower,omitempty"`
-}
-
-// DatabaseService holds a database service name and its connection details.
-type DatabaseService struct {
-	Service string `yaml:"service"`
-	Type    string `yaml:"type,omitempty"` // postgres, mysql, mongo
-	DBName  string `yaml:"db_name,omitempty"`
-	DBUser  string `yaml:"db_user,omitempty"`
-}
-
-// FrontendConfig holds frontend project settings.
-type FrontendConfig struct {
-	Path           string `yaml:"path,omitempty"`
+// Service represents a single service detected from docker-compose.
+type Service struct {
+	Name           string `yaml:"name"`
+	Type           string `yaml:"type"`                      // python, nodejs, postgres, mysql, mongo, redis, celery_worker, celery_beat, flower, proxy, mail, storage, …
+	DBName         string `yaml:"db_name,omitempty"`
+	DBUser         string `yaml:"db_user,omitempty"`
+	Path           string `yaml:"path,omitempty"`             // local project directory (e.g. ./frontend)
 	PackageManager string `yaml:"package_manager,omitempty"` // npm, yarn, pnpm
+}
+
+// appTypes are technology types that represent application services.
+var appTypes = map[string]bool{
+	"python": true, "nodejs": true, "ruby": true, "java": true, "go": true,
+}
+
+// dbTypes are types that represent database services.
+var dbTypes = map[string]bool{
+	"postgres": true, "mysql": true, "mongo": true,
+}
+
+// Backend returns the name of the first app-type service (python, nodejs, etc.).
+func (c *Config) Backend() string {
+	for _, s := range c.Services {
+		if appTypes[s.Type] {
+			return s.Name
+		}
+	}
+	return ""
+}
+
+// Databases returns all database services (postgres, mysql, mongo).
+func (c *Config) Databases() []Service {
+	var dbs []Service
+	for _, s := range c.Services {
+		if dbTypes[s.Type] {
+			dbs = append(dbs, s)
+		}
+	}
+	return dbs
+}
+
+// Redis returns the first redis service name, or "".
+func (c *Config) Redis() string {
+	for _, s := range c.Services {
+		if s.Type == "redis" {
+			return s.Name
+		}
+	}
+	return ""
+}
+
+// Workers returns names of celery_worker / celery_beat services.
+func (c *Config) Workers() []string {
+	var names []string
+	for _, s := range c.Services {
+		if s.Type == "celery_worker" || s.Type == "celery_beat" {
+			names = append(names, s.Name)
+		}
+	}
+	return names
+}
+
+// Flower returns the first flower service name, or "".
+func (c *Config) Flower() string {
+	for _, s := range c.Services {
+		if s.Type == "flower" {
+			return s.Name
+		}
+	}
+	return ""
+}
+
+// NodeJSProjects returns all services with type "nodejs".
+func (c *Config) NodeJSProjects() []Service {
+	var projs []Service
+	for _, s := range c.Services {
+		if s.Type == "nodejs" {
+			projs = append(projs, s)
+		}
+	}
+	return projs
+}
+
+// FindService returns a pointer to the service with the given name, or nil.
+func (c *Config) FindService(name string) *Service {
+	for i := range c.Services {
+		if c.Services[i].Name == name {
+			return &c.Services[i]
+		}
+	}
+	return nil
 }
 
 // E2EConfig holds end-to-end testing settings.
@@ -112,7 +181,7 @@ const header = `# mf - docker-compose project manager
 # Stack Commands:
 #   mf celery start|stop|restart|logs   Manage Celery workers
 #   mf flower logs                      Follow Flower logs
-#   mf frontend install|dev|build|preview|lint|type-check|check-all|restart
+#   mf run <service> <script> [args...]   Run a package.json script (services with path: set)
 #   mf e2e install|run|ui|headed|debug|report
 
 `
@@ -136,11 +205,14 @@ func applyDefaults(cfg *Config) {
 	if cfg.ComposeFile == "" {
 		cfg.ComposeFile = "docker-compose.yml"
 	}
-	if cfg.Services.Backend == "" {
-		cfg.Services.Backend = "web"
+	// If no backend exists, add a default "web" python entry.
+	if cfg.Backend() == "" {
+		cfg.Services = append(cfg.Services, Service{Name: "web", Type: "python"})
 	}
-	if cfg.Frontend.PackageManager == "" && cfg.Frontend.Path != "" {
-		cfg.Frontend.PackageManager = "npm"
+	for i := range cfg.Services {
+		if cfg.Services[i].Path != "" && cfg.Services[i].PackageManager == "" {
+			cfg.Services[i].PackageManager = "npm"
+		}
 	}
 	if cfg.Test.Runner == "" {
 		cfg.Test.Runner = "pytest"

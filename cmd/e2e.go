@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jlavera/mf-cli/internal/nodejs"
 	"github.com/jlavera/mf-cli/internal/runner"
 	"github.com/spf13/cobra"
 )
@@ -151,10 +152,6 @@ func e2eConfig() (string, string, error) {
 		dir = filepath.Join(cwd, dir)
 	}
 
-	pm := cfg.Frontend.PackageManager
-	if pm == "" {
-		pm = "npm"
-	}
-
+	pm := nodejs.DetectPackageManager(dir)
 	return dir, pm, nil
 }

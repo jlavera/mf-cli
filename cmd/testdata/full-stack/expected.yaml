@@ -1,0 +1,17 @@
+project: testproject
+compose_file: docker-compose.yml
+services:
+  - name: web
+    type: python
+  - name: db
+    type: postgres
+    db_name: fullstack
+    db_user: fulluser
+  - name: api
+    type: nodejs
+    path: ./api
+    package_manager: npm
+  - name: frontend
+    type: nodejs
+    path: ./frontend
+    package_manager: npm

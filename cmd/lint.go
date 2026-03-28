@@ -20,7 +20,7 @@ Falls back to running ruff via docker-compose exec if no script is set.`,
 			return runner.Run(cfg.Scripts.Ruff, ".")
 		}
 		// Fallback: run ruff in the backend container
-		service := cfg.Services.Backend
+		service := cfg.Backend()
 		if service == "" {
 			return fmt.Errorf("no lint script or backend service configured")
 		}
@@ -32,9 +32,9 @@ var sortImportsCmd = &cobra.Command{
 	Use:   "sort-imports",
 	Short: "Sort Python imports using Ruff",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		service := cfg.Services.Backend
+		service := cfg.Backend()
 		if service == "" {
-			return fmt.Errorf("no backend service configured — set services.backend in mf.yaml")
+			return fmt.Errorf("no backend service configured — add a service with type: python in mf.yaml")
 		}
 		return comp.Exec(service, "ruff", "check", "--select", "I", "--fix", ".")
 	},

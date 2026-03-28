@@ -1,0 +1,25 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    command: python manage.py runserver 0.0.0.0:8000
+    depends_on:
+      - db
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: fullstack
+      POSTGRES_USER: fulluser
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"
+  # Node.js API — detected as "unknown" by image matcher; picked up via api/package.json
+  api:
+    image: node:20-alpine
+    ports:
+      - "3000:3000"
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"

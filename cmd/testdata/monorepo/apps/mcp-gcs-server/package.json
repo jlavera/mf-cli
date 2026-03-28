@@ -1,0 +1,8 @@
+{
+  "name": "mcp-gcs-server",
+  "version": "1.0.0",
+  "scripts": {
+    "start:dev": "ts-node src/index.ts",
+    "build": "tsc"
+  }
+}

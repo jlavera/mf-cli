@@ -1,6 +1,9 @@
 package compose
 
 import (
+	"encoding/json"
+	"strings"
+
 	"github.com/jlavera/mf-cli/internal/config"
 	"github.com/jlavera/mf-cli/internal/runner"
 )
@@ -85,4 +88,43 @@ func (c *Compose) ExecWithEnv(service string, env map[string]string, command ...
 	args = append(args, service)
 	args = append(args, command...)
 	return c.run(args...)
+}
+
+// ContainerStatus holds the state of a single container from docker-compose ps.
+type ContainerStatus struct {
+	Service string `json:"Service"`
+	State   string `json:"State"`
+	Health  string `json:"Health"`
+	Status  string `json:"Status"`
+}
+
+// Ps returns the status of all containers by parsing docker-compose ps --format json.
+func (c *Compose) Ps() ([]ContainerStatus, error) {
+	fullArgs := append(c.baseArgs(), "ps", "-a", "--format", "json")
+	out, err := runner.Output("docker-compose", fullArgs...)
+	if err != nil {
+		return nil, err
+	}
+
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return nil, nil
+	}
+
+	var statuses []ContainerStatus
+
+	// docker-compose v2 outputs one JSON object per line
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var cs ContainerStatus
+		if err := json.Unmarshal([]byte(line), &cs); err != nil {
+			continue
+		}
+		statuses = append(statuses, cs)
+	}
+
+	return statuses, nil
 }

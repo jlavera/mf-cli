@@ -41,9 +41,9 @@ func init() {
 }
 
 func runTest(cmd *cobra.Command, args []string) error {
-	service := cfg.Services.Backend
+	service := cfg.Backend()
 	if service == "" {
-		return fmt.Errorf("no backend service configured — set services.backend in mf.yaml")
+		return fmt.Errorf("no backend service configured — add a service with type: python in mf.yaml")
 	}
 
 	runner := cfg.Test.Runner

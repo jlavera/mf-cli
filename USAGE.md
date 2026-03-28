@@ -29,8 +29,8 @@ This scans your compose file, detects all services, and generates an `mf.yaml` c
 
 ✅ Scanned docker-compose.yml — found 6 services
 
-  web           → backend (main service)
-  db            → db (postgres, db: myapp, user: postgres)
+  web           → python
+  db            → postgres (db: myapp, user: postgres)
   redis         → redis
   celery_worker → celery_worker
   celery_flower → flower
@@ -57,23 +57,26 @@ The generated config will look something like this:
 project: my-project
 compose_file: docker-compose.yml
 services:
-    backend: web
-    db: db
-    redis: redis
-    workers:
-        - celery_worker
-    flower: celery_flower
-database:
+  - name: web
+    type: python
+  - name: db
     type: postgres
-    name: myapp
-    user: postgres
-frontend:
+    db_name: myapp
+    db_user: postgres
+  - name: redis
+    type: redis
+  - name: celery_worker
+    type: celery_worker
+  - name: celery_flower
+    type: flower
+  - name: frontend
+    type: nodejs
     path: ./frontend
     package_manager: npm
 e2e:
-    path: ./e2e
-    framework: playwright
-    browser: chromium
+  path: ./e2e
+  framework: playwright
+  browser: chromium
 ```
 
 You can add script paths, test settings, or adjust any detected values:
@@ -160,7 +163,7 @@ mf shell db
 mf psql
 ```
 
-This uses the `database.type`, `database.name`, and `database.user` from your `mf.yaml` to build the right command. For a postgres config, it runs:
+This uses the service's `type`, `db_name`, and `db_user` from your `mf.yaml` to build the right command. For a postgres service, it runs:
 
 ```
 docker-compose exec db psql -U postgres -d myapp
@@ -204,7 +207,7 @@ The test command uses the configured `test.runner` (default: `pytest`) and passe
 ## Celery Workers
 
 ```bash
-mf celery start       # Start all workers defined in services.workers
+mf celery start       # Start all services with type: celery_worker/celery_beat
 mf celery stop        # Stop workers
 mf celery restart     # Restart workers
 mf celery logs        # Follow worker logs
@@ -214,23 +217,22 @@ mf flower logs        # Follow Flower dashboard logs
 
 ---
 
-## Frontend Development
+## Running Package Scripts
 
-All frontend commands run in the directory specified by `frontend.path` using the configured `frontend.package_manager`.
+For services with a `path:` set, use `mf run` to execute package.json scripts:
 
 ```bash
-mf frontend install       # npm install (or yarn/pnpm)
-mf frontend dev           # Start dev server (npm run dev)
-mf frontend build         # Production build
-mf frontend build --prod  # Production build with optimizations (npm run build:prod)
-mf frontend lint          # ESLint
-mf frontend type-check    # TypeScript checking
-mf frontend check-all     # All checks at once
-mf frontend preview       # Preview production build
+mf run frontend install   # npm install (or yarn/pnpm)
+mf run frontend dev       # npm run dev
+mf run frontend build     # npm run build
+mf run frontend lint      # npm run lint
 
-# Stuck with stale cache?
-mf frontend restart       # Clears Vite cache and restarts dev server
+# Works with any service that has path: set
+mf run api test           # npm run test (in the api service dir)
+mf run api dev            # npm run dev (in the api service dir)
 ```
+
+Tab completion lists available services, then available scripts from `package.json`.
 
 ---
 
@@ -341,11 +343,8 @@ When `mf init` doesn't recognize a service image, you can add support by editing
 ```go
 var DefaultMatchers = []ImageMatcher{
     // ... existing matchers ...
-
-    // Add your custom matcher
     {
         Patterns:    []string{"clickhouse", "yandex/clickhouse-server"},
-        Role:        "db",
         ServiceType: "clickhouse",
         EnvMappings: map[string]string{
             "CLICKHOUSE_DB":   "db_name",

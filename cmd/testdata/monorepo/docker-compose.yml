@@ -1,0 +1,110 @@
+services:
+  admin:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.admin
+      target: installer
+    command: sh -c "npm install && npm run dev --workspace=admin"
+    ports:
+      - "3003:3003"
+    env_file:
+      - apps/admin/.env
+    volumes:
+      - ./apps/admin:/app/apps/admin
+      - ./packages:/app/packages
+      - /app/apps/admin/node_modules
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+      target: builder
+    command: sh -c "npm install && npm run start:dev --workspace=api"
+    ports:
+      - "3000:3000"
+    env_file:
+      - apps/api/.env
+    environment:
+      DB_HOST: postgres
+      NODE_ENV: development
+    volumes:
+      - ./apps/api/src:/app/apps/api/src
+      - ./apps/api/package.json:/app/apps/api/package.json
+      - ./apps/api/uploads:/app/apps/api/uploads
+      - ./node_modules:/app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  langgraph:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.langgraph
+      target: builder
+    command: sh -c "npm install && npm run dev --workspace=langgraph"
+    ports:
+      - "2024:2024"
+    env_file:
+      - apps/langgraph/.env
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/langgraph/src:/app/apps/langgraph/src
+      - ./apps/langgraph/package.json:/app/apps/langgraph/package.json
+      - ./apps/langgraph/.env:/app/apps/langgraph/.env
+
+  mcp-gcs-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp-gcs-server
+      target: builder
+    command: sh -c "npm install && npm run start:dev --workspace=mcp-gcs-server"
+    ports:
+      - "3004:3004"
+    env_file:
+      - apps/mcp-gcs-server/.env
+    environment:
+      GCS_SERVICE_ACCOUNT_JSON: ${GCS_SERVICE_ACCOUNT_JSON:-}
+      NODE_ENV: development
+      PDF_DPI: ${PDF_DPI:-150}
+      PDF_MAX_DIMENSION: ${PDF_MAX_DIMENSION:-1568}
+    volumes:
+      - ./apps/mcp-gcs-server/src:/app/apps/mcp-gcs-server/src
+      - ./apps/mcp-gcs-server/package.json:/app/apps/mcp-gcs-server/package.json
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      target: installer
+    command: sh -c "npm install && npm run dev --workspace=web"
+    ports:
+      - "3001:3001"
+    env_file:
+      - apps/web/.env
+    environment:
+      NODE_ENV: development
+      API_URL: http://api:3000
+    volumes:
+      - ./apps/web:/app/apps/web
+      - ./packages:/app/packages
+      - /app/apps/web/node_modules
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-thirdst}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-thirdst}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

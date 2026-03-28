@@ -1,0 +1,7 @@
+project: testproject
+compose_file: docker-compose.yml
+services:
+  - name: db
+    type: postgres
+    db_name: myapp
+    db_user: myuser

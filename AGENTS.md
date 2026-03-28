@@ -55,6 +55,5 @@ go test -v ./internal/config/
 
 Add entries to `DefaultMatchers` in `internal/compose/parser.go`. Each matcher has:
 - `Patterns` — image name prefixes to match
-- `Role` — the role assigned to the service
-- `ServiceType` — sub-type identifier
+- `ServiceType` — type identifier (e.g. "postgres", "redis", "flower")
 - `EnvMappings` — optional env var → config field mappings

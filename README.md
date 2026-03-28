@@ -48,7 +48,7 @@ Detects:
 - **Proxies** — Nginx, Traefik, Caddy
 - **Search** — Elasticsearch, OpenSearch
 - **Storage** — MinIO, LocalStack
-- **Apps** — Backend/frontend classification from ports and build context
+- **Apps** — Python, Node.js, Ruby, Go, Java detection from commands and images
 
 ```bash
 mf init                              # auto-detect compose file in CWD
@@ -70,9 +70,9 @@ mf restart [services...]             # restart (with args: docker-compose restar
 mf clean                             # remove containers + volumes
 mf rebuild [services...]             # down + build --no-cache + up
 
-mf shell [service]                   # shell into container (default: backend; tries bash, falls back to sh)
+mf shell [service]                   # shell into container (default: first app-type service)
 mf psql [service]                    # database shell (postgres/mysql/mongo); omit service if only one DB
-mf redis-cli [service]               # redis-cli (default: services.redis)
+mf redis-cli [service]               # redis-cli (default: first redis service)
 
 mf test [apps...]                    # run all or specific app tests
 mf test -f path/to/test.py           # specific test file
@@ -96,14 +96,9 @@ mf update                            # update mf to the latest release (requires
 mf celery start|stop|restart|logs    # manage Celery workers
 mf flower logs                       # follow Flower logs
 
-mf frontend install                  # npm/yarn/pnpm install
-mf frontend dev                      # start dev server
-mf frontend build [--prod]           # build (--prod for production)
-mf frontend preview                  # preview production build
-mf frontend lint                     # run ESLint
-mf frontend type-check               # TypeScript check
-mf frontend check-all                # all checks
-mf frontend restart                  # clear cache + restart dev
+mf run <service> <script> [args...]  # run package.json script for services with path: set
+mf run frontend dev                  # npm run dev in ./frontend
+mf run api test                      # npm run test in ./api
 
 mf e2e install                       # install deps + browsers
 mf e2e run [-f file] [--project name]  # run tests
@@ -121,12 +116,7 @@ mf e2e report                        # view HTML report
 |---------|---------|
 | `project` | Project name |
 | `compose_file` | Path to docker-compose file |
-| `services.backend` | Compose service name for the backend |
-| `services.databases` | List of DB services with `type`, `db_name`, `db_user` |
-| `services.redis` | Redis service name |
-| `services.workers` | Celery worker service names |
-| `services.flower` | Flower service name |
-| `frontend` | Path and package manager for frontend commands |
+| `services` | List of services, each with `name`, `type`, and optional `db_name`, `db_user`, `path`, `package_manager` |
 | `e2e` | Path, framework, browser for e2e commands |
 | `scripts` | Paths to project scripts (format, lint, pre-commit) |
 | `test` | Test runner, env vars, debug port |
@@ -146,7 +136,6 @@ Add entries to `DefaultMatchers` in [`internal/compose/parser.go`](internal/comp
 ```go
 {
     Patterns:    []string{"my-custom-image"},
-    Role:        "custom-role",
     ServiceType: "custom",
     EnvMappings: map[string]string{"MY_DB": "db_name"},
 },

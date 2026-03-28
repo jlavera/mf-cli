@@ -49,11 +49,12 @@ func TestRootHelp(t *testing.T) {
 	}
 
 	expectedCommands := []string{
-		"up", "stop", "build", "down", "logs", "restart", "clean", "rebuild",
+		"up", "stop", "build", "down", "logs", "bounce", "clean", "rebuild",
 		"shell", "psql", "redis-cli",
 		"celery", "flower",
+		"run",
 		"test",
-		"frontend", "e2e",
+		"e2e",
 		"format", "lint", "pre-commit",
 		"debug",
 		"init",
@@ -123,17 +124,17 @@ func TestInitGeneratesConfig(t *testing.T) {
 	}
 
 	config := string(data)
-	if !strings.Contains(config, "backend: web") {
-		t.Error("config missing 'backend: web'")
+	if !strings.Contains(config, "name: web") {
+		t.Error("config missing 'name: web'")
 	}
 	if !strings.Contains(config, "type: postgres") {
 		t.Error("config missing 'type: postgres'")
 	}
-	if !strings.Contains(config, "name: testdb") {
-		t.Error("config missing 'name: testdb'")
+	if !strings.Contains(config, "db_name: testdb") {
+		t.Error("config missing 'db_name: testdb'")
 	}
-	if !strings.Contains(config, "user: testuser") {
-		t.Error("config missing 'user: testuser'")
+	if !strings.Contains(config, "db_user: testuser") {
+		t.Error("config missing 'db_user: testuser'")
 	}
 }
 
@@ -202,7 +203,6 @@ func TestSubcommandHelp(t *testing.T) {
 		contains []string
 	}{
 		{[]string{"celery", "--help"}, []string{"start", "stop", "restart", "logs"}},
-		{[]string{"frontend", "--help"}, []string{"install", "dev", "build", "lint", "type-check"}},
 		{[]string{"e2e", "--help"}, []string{"install", "run", "ui", "headed", "debug", "report"}},
 		{[]string{"debug", "--help"}, []string{"check", "clean"}},
 		{[]string{"test", "--help"}, []string{"--file", "--method", "--debug"}},
@@ -346,5 +346,138 @@ func TestFileCompletionDirectives(t *testing.T) {
 	stdout, _, _ = runMF(dir, "__complete", "init", "--file", "")
 	if !strings.Contains(stdout, "yml") || !strings.Contains(stdout, "yaml") {
 		t.Error("init --file completion should suggest yml/yaml extension filter")
+	}
+}
+
+func TestInitDetectsNodeJSProjects(t *testing.T) {
+	dir := t.TempDir()
+
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(`services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+`), 0644)
+
+	frontendDir := filepath.Join(dir, "frontend")
+	os.MkdirAll(frontendDir, 0755)
+	os.WriteFile(filepath.Join(frontendDir, "package.json"), []byte(`{"name":"fe","scripts":{"dev":"vite","build":"vite build"}}`), 0644)
+
+	_, stderr, err := runMF(dir, "init")
+	if err != nil {
+		t.Fatalf("mf init failed: %v\nstderr: %s", err, stderr)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, "mf.yaml"))
+	config := string(data)
+	if !strings.Contains(config, "name: frontend") {
+		t.Error("mf.yaml missing frontend service entry")
+	}
+	if !strings.Contains(config, "path: ./frontend") {
+		t.Error("mf.yaml missing path for frontend service")
+	}
+}
+
+func TestRunHelp(t *testing.T) {
+	stdout, _, err := runMF("", "run", "--help")
+	if err != nil {
+		t.Fatalf("mf run --help failed: %v", err)
+	}
+	for _, s := range []string{"service", "script", "install"} {
+		if !strings.Contains(stdout, s) {
+			t.Errorf("run --help missing %q", s)
+		}
+	}
+}
+
+func TestRunProjectCompletion(t *testing.T) {
+	dir := t.TempDir()
+
+	os.WriteFile(filepath.Join(dir, "mf.yaml"), []byte(`project: test
+compose_file: docker-compose.yml
+services:
+  - name: web
+    type: python
+  - name: frontend
+    type: nodejs
+    path: ./frontend
+    package_manager: npm
+  - name: api
+    type: nodejs
+    path: ./api
+    package_manager: npm
+`), 0644)
+
+	stdout, _, err := runMF(dir, "__complete", "run", "")
+	if err != nil {
+		t.Fatalf("completion failed: %v", err)
+	}
+	if !strings.Contains(stdout, "frontend") {
+		t.Errorf("expected 'frontend' in project completion, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "api") {
+		t.Errorf("expected 'api' in project completion, got:\n%s", stdout)
+	}
+}
+
+func TestRunScriptCompletion(t *testing.T) {
+	dir := t.TempDir()
+
+	apiDir := filepath.Join(dir, "api")
+	os.MkdirAll(apiDir, 0755)
+	os.WriteFile(filepath.Join(apiDir, "package.json"), []byte(`{
+		"scripts": {"test": "jest", "test:watch": "jest --watch", "build": "tsc"}
+	}`), 0644)
+
+	os.WriteFile(filepath.Join(dir, "mf.yaml"), []byte(`project: test
+compose_file: docker-compose.yml
+services:
+  - name: web
+    type: python
+  - name: api
+    type: nodejs
+    path: ./api
+    package_manager: npm
+`), 0644)
+
+	stdout, _, err := runMF(dir, "__complete", "run", "api", "")
+	if err != nil {
+		t.Fatalf("completion failed: %v", err)
+	}
+	for _, s := range []string{"test", "test:watch", "build", "install"} {
+		if !strings.Contains(stdout, s) {
+			t.Errorf("expected %q in script completion, got:\n%s", s, stdout)
+		}
+	}
+}
+
+func TestNodeJSMultipleProjects(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, name := range []string{"frontend", "api"} {
+		d := filepath.Join(dir, name)
+		os.MkdirAll(d, 0755)
+		os.WriteFile(filepath.Join(d, "package.json"), []byte(`{"scripts":{"dev":"node .","build":"tsc"}}`), 0644)
+	}
+
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(`services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+`), 0644)
+
+	_, stderr, err := runMF(dir, "init")
+	if err != nil {
+		t.Fatalf("mf init failed: %v\nstderr: %s", err, stderr)
+	}
+
+	data, _ := os.ReadFile(filepath.Join(dir, "mf.yaml"))
+	config := string(data)
+	if !strings.Contains(config, "name: frontend") {
+		t.Error("mf.yaml missing nodejs entry 'frontend'")
+	}
+	if !strings.Contains(config, "name: api") {
+		t.Error("mf.yaml missing nodejs entry 'api'")
 	}
 }

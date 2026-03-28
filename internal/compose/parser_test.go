@@ -30,7 +30,7 @@ func TestClassifyServices(t *testing.T) {
 		t.Fatalf("failed to parse compose file: %v", err)
 	}
 
-	detected := ClassifyServices(cf)
+	detected := ClassifyServices(cf, "testdata")
 	if len(detected) != 6 {
 		t.Fatalf("expected 6 detected services, got %d", len(detected))
 	}
@@ -41,20 +41,18 @@ func TestClassifyServices(t *testing.T) {
 		byName[ds.Name] = ds
 	}
 
-	// Check classifications
 	tests := []struct {
 		name         string
-		expectedRole string
 		expectedType string
 		dbName       string
 		dbUser       string
 	}{
-		{"db", "db", "postgres", "topline", "postgres"},
-		{"redis", "redis", "redis", "", ""},
-		{"celery_worker", "celery_worker", "celery_worker", "", ""},
-		{"celery_flower", "flower", "flower", "", ""},
-		{"nginx", "proxy", "proxy", "", ""},
-		{"web", "backend", "backend", "", ""},
+		{"db", "postgres", "topline", "postgres"},
+		{"redis", "redis", "", ""},
+		{"celery_worker", "celery_worker", "", ""},
+		{"celery_flower", "flower", "", ""},
+		{"nginx", "proxy", "", ""},
+		{"web", "python", "", ""},
 	}
 
 	for _, tt := range tests {
@@ -62,9 +60,6 @@ func TestClassifyServices(t *testing.T) {
 			ds, ok := byName[tt.name]
 			if !ok {
 				t.Fatalf("service %q not found in results", tt.name)
-			}
-			if ds.Role != tt.expectedRole {
-				t.Errorf("service %q: expected role %q, got %q", tt.name, tt.expectedRole, ds.Role)
 			}
 			if ds.ServiceType != tt.expectedType {
 				t.Errorf("service %q: expected type %q, got %q", tt.name, tt.expectedType, ds.ServiceType)
@@ -185,7 +180,7 @@ func TestClassifyServicesComplex(t *testing.T) {
 		t.Fatalf("failed to parse complex compose: %v", err)
 	}
 
-	detected := ClassifyServices(cf)
+	detected := ClassifyServices(cf, "testdata")
 	byName := make(map[string]DetectedService)
 	for _, ds := range detected {
 		byName[ds.Name] = ds
@@ -193,11 +188,11 @@ func TestClassifyServicesComplex(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		expectedRole string
+		expectedType string
 	}{
-		{"api", "backend"},
-		{"frontend", "frontend"},
-		{"db", "db"},
+		{"api", "python"},
+		{"frontend", "nodejs"},
+		{"db", "postgres"},
 		{"redis", "redis"},
 		{"worker", "celery_worker"},
 		{"beat", "celery_beat"},
@@ -212,8 +207,8 @@ func TestClassifyServicesComplex(t *testing.T) {
 			if !ok {
 				t.Fatalf("service %q not found", tt.name)
 			}
-			if ds.Role != tt.expectedRole {
-				t.Errorf("service %q: expected role %q, got %q", tt.name, tt.expectedRole, ds.Role)
+			if ds.ServiceType != tt.expectedType {
+				t.Errorf("service %q: expected type %q, got %q", tt.name, tt.expectedType, ds.ServiceType)
 			}
 		})
 	}
@@ -243,7 +238,7 @@ func TestClassifyServicesMinimal(t *testing.T) {
 		t.Fatalf("failed to parse minimal compose: %v", err)
 	}
 
-	detected := ClassifyServices(cf)
+	detected := ClassifyServices(cf, "testdata")
 	if len(detected) != 1 {
 		t.Fatalf("expected 1 service, got %d", len(detected))
 	}
@@ -252,9 +247,55 @@ func TestClassifyServicesMinimal(t *testing.T) {
 	if ds.Name != "app" {
 		t.Errorf("expected name 'app', got %q", ds.Name)
 	}
-	// Port 3000 with build context → backend
-	if ds.Role != "backend" {
-		t.Errorf("expected role 'backend', got %q", ds.Role)
+	// Build context with Dockerfile → type detected from FROM instruction
+	if ds.ServiceType != "python" {
+		t.Errorf("expected type 'python' (from Dockerfile), got %q", ds.ServiceType)
+	}
+}
+
+func TestReadDockerfileBaseImage(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		wantTech string
+	}{
+		{"python", "FROM python:3.12-slim\nWORKDIR /app\n", "python"},
+		{"node", "FROM node:20-alpine\nWORKDIR /app\n", "nodejs"},
+		{"multistage node+nginx", "FROM node:20 AS builder\nRUN npm ci\nFROM nginx:alpine\nCOPY --from=builder /app/dist /usr/share/nginx/html\n", "nodejs"},
+		{"golang", "FROM golang:1.22\nWORKDIR /app\n", "go"},
+		{"ruby", "FROM ruby:3.3\nWORKDIR /app\n", "ruby"},
+		{"unknown", "FROM alpine:3.19\nRUN apk add curl\n", ""},
+		{"empty", "", ""},
+		{"comments only", "# just a comment\n", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := dir + "/Dockerfile"
+			os.WriteFile(path, []byte(tt.content), 0644)
+			got := readDockerfileBaseImage(path)
+			if got != tt.wantTech {
+				t.Errorf("readDockerfileBaseImage() = %q, want %q", got, tt.wantTech)
+			}
+		})
+	}
+}
+
+func TestExtractDockerfilePath(t *testing.T) {
+	if got := extractDockerfilePath(nil); got != "" {
+		t.Errorf("nil build: expected empty, got %q", got)
+	}
+	if got := extractDockerfilePath("."); got != "Dockerfile" {
+		t.Errorf("string build: expected 'Dockerfile', got %q", got)
+	}
+	m := map[string]interface{}{"context": ".", "dockerfile": "Dockerfile.dev"}
+	if got := extractDockerfilePath(m); got != "Dockerfile.dev" {
+		t.Errorf("map build with dockerfile: expected 'Dockerfile.dev', got %q", got)
+	}
+	m2 := map[string]interface{}{"context": "."}
+	if got := extractDockerfilePath(m2); got != "Dockerfile" {
+		t.Errorf("map build without dockerfile: expected 'Dockerfile', got %q", got)
 	}
 }
 

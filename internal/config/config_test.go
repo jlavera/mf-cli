@@ -7,12 +7,12 @@ import (
 )
 
 func TestLoadAndDefaults(t *testing.T) {
-	// Write a minimal config file
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mf.yaml")
 	content := `project: test-project
 services:
-  backend: web
+  - name: web
+    type: python
 `
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -23,15 +23,12 @@ services:
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	// Check explicit values
 	if cfg.Project != "test-project" {
 		t.Errorf("expected project 'test-project', got %q", cfg.Project)
 	}
-	if cfg.Services.Backend != "web" {
-		t.Errorf("expected backend 'web', got %q", cfg.Services.Backend)
+	if cfg.Backend() != "web" {
+		t.Errorf("expected backend 'web', got %q", cfg.Backend())
 	}
-
-	// Check defaults
 	if cfg.ComposeFile != "docker-compose.yml" {
 		t.Errorf("expected default compose_file 'docker-compose.yml', got %q", cfg.ComposeFile)
 	}
@@ -43,26 +40,50 @@ services:
 	}
 }
 
+func TestLoadMinimalAddsDefaultBackend(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mf.yaml")
+	content := `project: bare
+services: []
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.Backend() != "web" {
+		t.Errorf("expected default backend 'web', got %q", cfg.Backend())
+	}
+}
+
 func TestLoadFullConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mf.yaml")
 	content := `project: my-project
 compose_file: compose.yml
 services:
-  backend: api
-  databases:
-    - service: postgres
-      type: postgres
-      db_name: mydb
-      db_user: admin
-  redis: cache
-  workers:
-    - worker1
-    - worker2
-  flower: monitor
-frontend:
-  path: ./client
-  package_manager: yarn
+  - name: api
+    type: python
+  - name: postgres
+    type: postgres
+    db_name: mydb
+    db_user: admin
+  - name: cache
+    type: redis
+  - name: worker1
+    type: celery_worker
+  - name: worker2
+    type: celery_beat
+  - name: monitor
+    type: flower
+  - name: frontend
+    type: nodejs
+    path: ./client
+    package_manager: yarn
 e2e:
   path: ./e2e
   framework: playwright
@@ -91,27 +112,41 @@ test:
 	if cfg.ComposeFile != "compose.yml" {
 		t.Errorf("compose_file: got %q", cfg.ComposeFile)
 	}
-	if cfg.Services.Backend != "api" {
-		t.Errorf("backend: got %q", cfg.Services.Backend)
+	if cfg.Backend() != "api" {
+		t.Errorf("backend: got %q", cfg.Backend())
 	}
-	if len(cfg.Services.Workers) != 2 {
-		t.Errorf("workers: expected 2, got %d", len(cfg.Services.Workers))
+	workers := cfg.Workers()
+	if len(workers) != 2 {
+		t.Errorf("workers: expected 2, got %d", len(workers))
 	}
-	if len(cfg.Services.Databases) != 1 {
-		t.Errorf("databases: expected 1, got %d", len(cfg.Services.Databases))
+	dbs := cfg.Databases()
+	if len(dbs) != 1 {
+		t.Errorf("databases: expected 1, got %d", len(dbs))
 	}
-	if cfg.Services.Databases[0].Type != "postgres" {
-		t.Errorf("db type: got %q", cfg.Services.Databases[0].Type)
+	if dbs[0].Type != "postgres" {
+		t.Errorf("db type: got %q", dbs[0].Type)
 	}
-	if cfg.Services.Databases[0].DBName != "mydb" {
-		t.Errorf("db name: got %q", cfg.Services.Databases[0].DBName)
+	if dbs[0].DBName != "mydb" {
+		t.Errorf("db name: got %q", dbs[0].DBName)
 	}
-	if cfg.Frontend.Path != "./client" {
-		t.Errorf("frontend path: got %q", cfg.Frontend.Path)
+	if cfg.Redis() != "cache" {
+		t.Errorf("redis: got %q", cfg.Redis())
 	}
-	if cfg.Frontend.PackageManager != "yarn" {
-		t.Errorf("package_manager: got %q", cfg.Frontend.PackageManager)
+	if cfg.Flower() != "monitor" {
+		t.Errorf("flower: got %q", cfg.Flower())
 	}
+
+	projs := cfg.NodeJSProjects()
+	if len(projs) != 1 {
+		t.Fatalf("nodejs projects: expected 1, got %d", len(projs))
+	}
+	if projs[0].Path != "./client" {
+		t.Errorf("nodejs path: got %q", projs[0].Path)
+	}
+	if projs[0].PackageManager != "yarn" {
+		t.Errorf("nodejs package_manager: got %q", projs[0].PackageManager)
+	}
+
 	if cfg.E2E.Browser != "firefox" {
 		t.Errorf("e2e browser: got %q", cfg.E2E.Browser)
 	}
@@ -149,11 +184,9 @@ func TestWriteAndReadback(t *testing.T) {
 	cfg := &Config{
 		Project:     "roundtrip",
 		ComposeFile: "docker-compose.yml",
-		Services: ServicesConfig{
-			Backend: "web",
-			Databases: []DatabaseService{
-				{Service: "db", Type: "postgres", DBName: "testdb", DBUser: "testuser"},
-			},
+		Services: []Service{
+			{Name: "web", Type: "python"},
+			{Name: "db", Type: "postgres", DBName: "testdb", DBUser: "testuser"},
 		},
 	}
 
@@ -169,8 +202,9 @@ func TestWriteAndReadback(t *testing.T) {
 	if loaded.Project != "roundtrip" {
 		t.Errorf("roundtrip project: got %q", loaded.Project)
 	}
-	if len(loaded.Services.Databases) != 1 || loaded.Services.Databases[0].DBName != "testdb" {
-		t.Errorf("roundtrip db name: got %+v", loaded.Services.Databases)
+	dbs := loaded.Databases()
+	if len(dbs) != 1 || dbs[0].DBName != "testdb" {
+		t.Errorf("roundtrip db name: got %+v", dbs)
 	}
 }
 
@@ -185,5 +219,32 @@ func TestExists(t *testing.T) {
 	os.WriteFile(path, []byte("project: x"), 0644)
 	if !Exists(path) {
 		t.Error("expected Exists=true after creating file")
+	}
+}
+
+func TestPackageManagerDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mf.yaml")
+	content := `project: test
+services:
+  - name: frontend
+    type: nodejs
+    path: ./frontend
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	projs := cfg.NodeJSProjects()
+	if len(projs) != 1 {
+		t.Fatalf("expected 1 nodejs project, got %d", len(projs))
+	}
+	if projs[0].PackageManager != "npm" {
+		t.Errorf("expected default package_manager 'npm', got %q", projs[0].PackageManager)
 	}
 }

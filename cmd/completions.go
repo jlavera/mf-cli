@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/jlavera/mf-cli/internal/compose"
+	"github.com/jlavera/mf-cli/internal/nodejs"
 	"github.com/spf13/cobra"
 )
 
@@ -15,9 +17,9 @@ func completeDatabaseServiceNames(cmd *cobra.Command, args []string, toComplete 
 		return []string{}, cobra.ShellCompDirectiveNoFileComp
 	}
 	var names []string
-	for _, db := range cfg.Services.Databases {
-		if strings.HasPrefix(db.Service, toComplete) {
-			names = append(names, db.Service)
+	for _, db := range cfg.Databases() {
+		if strings.HasPrefix(db.Name, toComplete) {
+			names = append(names, db.Name)
 		}
 	}
 	if names == nil {
@@ -85,7 +87,65 @@ func completeE2EProjects(cmd *cobra.Command, args []string, toComplete string) (
 	return []string{}, cobra.ShellCompDirectiveNoFileComp
 }
 
-// getComposeServiceNames reads the compose file and returns all service names.
+// completeRunArgs handles completion for `mf run`:
+// - position 0: nodejs service names
+// - position 1: package.json scripts for the chosen service + "install"
+func completeRunArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	switch len(args) {
+	case 0:
+		if cfg == nil {
+			return []string{}, cobra.ShellCompDirectiveNoFileComp
+		}
+		var names []string
+		for _, p := range cfg.NodeJSProjects() {
+			if strings.HasPrefix(p.Name, toComplete) {
+				names = append(names, p.Name)
+			}
+		}
+		return names, cobra.ShellCompDirectiveNoFileComp
+
+	case 1:
+		if cfg == nil {
+			return []string{}, cobra.ShellCompDirectiveNoFileComp
+		}
+		svc := cfg.FindService(args[0])
+		if svc == nil {
+			return []string{}, cobra.ShellCompDirectiveNoFileComp
+		}
+		completions := []string{"install"}
+		if svc.Path != "" {
+			dir, err := resolveProjectDir(svc.Path)
+			if err == nil {
+				scripts, err := nodejs.ReadScripts(dir)
+				if err == nil {
+					for s := range scripts {
+						if strings.HasPrefix(s, toComplete) {
+							completions = append(completions, s)
+						}
+					}
+				}
+			}
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+
+	default:
+		return []string{}, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+
+// resolveProjectDir resolves a possibly-relative path to an absolute directory.
+func resolveProjectDir(path string) (string, error) {
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("could not determine working directory: %w", err)
+	}
+	return filepath.Join(cwd, path), nil
+}
+
 func getComposeServiceNames() []string {
 	// Determine compose file path
 	composeFile := "docker-compose.yml"

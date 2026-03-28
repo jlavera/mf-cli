@@ -1,0 +1,27 @@
+project: testproject
+compose_file: docker-compose.yml
+services:
+  - name: admin
+    type: nodejs
+    path: ./apps/admin
+    package_manager: npm
+  - name: api
+    type: nodejs
+    path: ./apps/api
+    package_manager: npm
+  - name: langgraph
+    type: nodejs
+    path: ./apps/langgraph
+    package_manager: npm
+  - name: mcp-gcs-server
+    type: nodejs
+    path: ./apps/mcp-gcs-server
+    package_manager: npm
+  - name: web
+    type: nodejs
+    path: ./apps/web
+    package_manager: npm
+  - name: postgres
+    type: postgres
+    db_name: thirdst
+    db_user: postgres

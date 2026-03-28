@@ -24,7 +24,7 @@ Use --check to verify formatting without making changes.`,
 		}
 
 		// Fallback: ruff format in the backend container
-		service := cfg.Services.Backend
+		service := cfg.Backend()
 		if service == "" {
 			return fmt.Errorf("no format script or backend service configured")
 		}
