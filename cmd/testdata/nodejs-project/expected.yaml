@@ -1,0 +1,11 @@
+project: testproject
+compose_file: docker-compose.yml
+services:
+  - name: api
+    type: nodejs
+    path: ./api
+    package_manager: npm
+  - name: db
+    type: postgres
+    db_name: nodeapp
+    db_user: nodeuser

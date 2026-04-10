@@ -1,0 +1,7 @@
+project: testproject
+compose_file: docker-compose.yml
+services:
+  - name: frontend
+    type: nodejs
+    path: ./frontend
+    package_manager: npm

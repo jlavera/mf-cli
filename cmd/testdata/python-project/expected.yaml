@@ -1,0 +1,9 @@
+project: testproject
+compose_file: docker-compose.yml
+services:
+  - name: web
+    type: python
+  - name: db
+    type: postgres
+    db_name: pythonapp
+    db_user: pythonuser
