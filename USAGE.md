@@ -154,6 +154,10 @@ mf shell
 
 # Shell into a specific service
 mf shell db
+
+# Forward extra args to the shell (flags starting with `-` pass through automatically)
+mf shell -c "ls /app"
+mf shell web -c "env"
 ```
 
 ### Database access
@@ -161,6 +165,13 @@ mf shell db
 ```bash
 # Open psql (or mysql/mongosh depending on your db type)
 mf psql
+
+# Run a one-off query — extra flags are forwarded to the underlying client
+mf psql -c "\dt"
+mf psql mydb -c "SELECT 1"
+
+# Use `--` to forward a positional arg (otherwise it's treated as a service name)
+mf psql -- some-positional
 ```
 
 This uses the service's `type`, `db_name`, and `db_user` from your `mf.yaml` to build the right command. For a postgres service, it runs:
@@ -173,6 +184,10 @@ docker-compose exec db psql -U postgres -d myapp
 
 ```bash
 mf redis-cli
+
+# Forward flags or commands to redis-cli
+mf redis-cli -n 1
+mf redis-cli PING
 ```
 
 ---

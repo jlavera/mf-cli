@@ -10,44 +10,104 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// splitServiceAndPassthrough separates the optional service-name argument from
+// extra args that should be forwarded to the underlying tool (psql, redis-cli,
+// bash, ...). The first non-flag arg is treated as a service name iff
+// isService returns true for it; otherwise it (and all following args) are
+// forwarded. A literal "--" explicitly terminates mf's own parsing.
+func splitServiceAndPassthrough(args []string, isService func(string) bool) (service string, extra []string, err error) {
+	if len(args) == 0 {
+		return "", nil, nil
+	}
+	first := args[0]
+	rest := args[1:]
+	switch {
+	case first == "--":
+		return "", rest, nil
+	case !strings.HasPrefix(first, "-"):
+		if !isService(first) {
+			return "", nil, fmt.Errorf("unknown service %q (use `--` to pass args to the underlying tool)", first)
+		}
+		service = first
+		if len(rest) > 0 && rest[0] == "--" {
+			rest = rest[1:]
+		}
+		return service, rest, nil
+	default:
+		return "", args, nil
+	}
+}
+
 var shellCmd = &cobra.Command{
-	Use:   "shell [service]",
+	Use:   "shell [service] [-- extra-args...]",
 	Short: "Open a shell in a container (default: backend service)",
 	Long: `Opens an interactive bash shell in the specified service container.
-If no service is specified, uses the backend service from config.`,
-	ValidArgsFunction: completeSingleServiceName,
+If no service is specified, uses the backend service from config.
+
+Extra args are forwarded to the underlying shell, e.g.:
+  mf shell -c "ls /app"
+  mf shell web -c "env"`,
+	DisableFlagParsing: true,
+	ValidArgsFunction:  completeSingleServiceName,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		service := cfg.Backend()
-		if len(args) > 0 {
-			service = args[0]
+		if hasHelpFlag(args) {
+			return cmd.Help()
+		}
+		service, extra, err := splitServiceAndPassthrough(args, func(name string) bool {
+			return cfg.FindService(name) != nil
+		})
+		if err != nil {
+			return err
+		}
+		if service == "" {
+			service = cfg.Backend()
 		}
 		if service == "" {
 			return fmt.Errorf("no backend service configured — specify a service name or add a service with type: python in mf.yaml")
 		}
-		return execShell(service)
+		return execShell(service, extra)
 	},
 }
 
 var psqlCmd = &cobra.Command{
-	Use:               "psql [service]",
-	Short:             "Open a database shell",
-	ValidArgsFunction: completeDatabaseServiceNames,
+	Use:   "psql [service] [-- extra-args...]",
+	Short: "Open a database shell",
+	Long: `Opens a database shell in the configured database service.
+
+Extra args are forwarded to the underlying client, e.g.:
+  mf psql -c "\dt"
+  mf psql mydb -c "SELECT 1"`,
+	DisableFlagParsing: true,
+	ValidArgsFunction:  completeDatabaseServiceNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if hasHelpFlag(args) {
+			return cmd.Help()
+		}
 		dbs := cfg.Databases()
 		if len(dbs) == 0 {
 			return fmt.Errorf("no databases configured — add a service with type: postgres in mf.yaml")
 		}
 
+		isDB := func(name string) bool {
+			for _, d := range dbs {
+				if d.Name == name {
+					return true
+				}
+			}
+			return false
+		}
+		serviceName, extra, err := splitServiceAndPassthrough(args, isDB)
+		if err != nil {
+			return err
+		}
+
 		var db *config.Service
-		if len(args) > 0 {
+		if serviceName != "" {
 			for i, d := range dbs {
-				if d.Name == args[0] {
+				if d.Name == serviceName {
 					db = &dbs[i]
 					break
 				}
-			}
-			if db == nil {
-				return fmt.Errorf("database service %q not found in mf.yaml", args[0])
 			}
 		} else if len(dbs) == 1 {
 			db = &dbs[0]
@@ -68,6 +128,7 @@ var psqlCmd = &cobra.Command{
 			if db.DBName != "" {
 				shellArgs = append(shellArgs, "-d", db.DBName)
 			}
+			shellArgs = append(shellArgs, extra...)
 			return comp.Exec(db.Name, shellArgs...)
 		case "mysql":
 			shellArgs := []string{"mysql"}
@@ -77,9 +138,11 @@ var psqlCmd = &cobra.Command{
 			if db.DBName != "" {
 				shellArgs = append(shellArgs, db.DBName)
 			}
+			shellArgs = append(shellArgs, extra...)
 			return comp.Exec(db.Name, shellArgs...)
 		case "mongo":
-			return comp.Exec(db.Name, "mongosh")
+			shellArgs := append([]string{"mongosh"}, extra...)
+			return comp.Exec(db.Name, shellArgs...)
 		default:
 			return fmt.Errorf("unsupported database type %q for service %q", db.Type, db.Name)
 		}
@@ -87,29 +150,60 @@ var psqlCmd = &cobra.Command{
 }
 
 var redisCliCmd = &cobra.Command{
-	Use:               "redis-cli [service]",
-	Short:             "Open redis-cli in a Redis container",
-	ValidArgsFunction: completeSingleServiceName,
+	Use:   "redis-cli [service] [-- extra-args...]",
+	Short: "Open redis-cli in a Redis container",
+	Long: `Opens redis-cli in the configured Redis service.
+
+Extra args are forwarded to redis-cli, e.g.:
+  mf redis-cli -n 1
+  mf redis-cli PING`,
+	DisableFlagParsing: true,
+	ValidArgsFunction:  completeSingleServiceName,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		service := cfg.Redis()
-		if len(args) > 0 {
-			service = args[0]
+		if hasHelpFlag(args) {
+			return cmd.Help()
+		}
+		service, extra, err := splitServiceAndPassthrough(args, func(name string) bool {
+			return cfg.FindService(name) != nil
+		})
+		if err != nil {
+			return err
+		}
+		if service == "" {
+			service = cfg.Redis()
 		}
 		if service == "" {
 			return fmt.Errorf("no redis service configured — specify a service name or add a service with type: redis in mf.yaml")
 		}
-		return comp.Exec(service, "redis-cli")
+		cliArgs := append([]string{"redis-cli"}, extra...)
+		return comp.Exec(service, cliArgs...)
 	},
 }
 
+// hasHelpFlag reports whether args contain a help flag. Needed because
+// DisableFlagParsing prevents Cobra from handling --help automatically.
+func hasHelpFlag(args []string) bool {
+	for _, a := range args {
+		if a == "-h" || a == "--help" {
+			return true
+		}
+		if a == "--" {
+			return false
+		}
+	}
+	return false
+}
+
 // execShell tries bash first; falls back to sh if bash is not available in the container.
-func execShell(service string) error {
-	err := comp.Exec(service, "bash")
+func execShell(service string, extra []string) error {
+	bashArgs := append([]string{"bash"}, extra...)
+	err := comp.Exec(service, bashArgs...)
 	if err == nil {
 		return nil
 	}
 	if isBashNotFound(err) {
-		return comp.Exec(service, "sh")
+		shArgs := append([]string{"sh"}, extra...)
+		return comp.Exec(service, shArgs...)
 	}
 	return err
 }

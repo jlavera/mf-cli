@@ -80,6 +80,15 @@ func shouldSkipConfig() bool {
 		return true // root command with no args — just shows help
 	}
 
+	// Skip for help invocations. Commands with DisableFlagParsing (e.g. psql,
+	// shell, redis-cli) don't let Cobra auto-detect --help, so we check here
+	// to ensure `mf <cmd> --help` works without a mf.yaml.
+	for _, a := range os.Args[1:] {
+		if a == "-h" || a == "--help" {
+			return true
+		}
+	}
+
 	cmd, _, _ := rootCmd.Find(os.Args[1:])
 	if cmd != nil {
 		// Check annotation

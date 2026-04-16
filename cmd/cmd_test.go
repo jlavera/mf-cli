@@ -366,6 +366,61 @@ func TestShellCompletionSingleArg(t *testing.T) {
 	}
 }
 
+// TestShellPassthroughHelp verifies that commands with DisableFlagParsing
+// still handle --help correctly (even without an mf.yaml) and advertise the
+// extra-args passthrough in their usage.
+func TestShellPassthroughHelp(t *testing.T) {
+	dir := t.TempDir() // no mf.yaml on purpose
+
+	cases := []string{"psql", "shell", "redis-cli"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			stdout, stderr, err := runMF(dir, name, "--help")
+			if err != nil {
+				t.Fatalf("mf %s --help failed: %v\nstderr: %s", name, err, stderr)
+			}
+			if !strings.Contains(stdout, "-- extra-args") {
+				t.Errorf("mf %s --help should document the `--` passthrough, got:\n%s", name, stdout)
+			}
+		})
+	}
+}
+
+// TestPsqlUnknownServiceError verifies that a non-flag first arg that doesn't
+// match any configured DB service produces a helpful error, while a flag-like
+// first arg is accepted (passthrough to psql).
+func TestPsqlUnknownServiceError(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "mf.yaml"), []byte(`project: test
+compose_file: docker-compose.yml
+services:
+  - name: db
+    type: postgres
+    db_name: appdb
+    db_user: appuser
+`), 0644)
+
+	// Non-flag, non-service first arg should error clearly.
+	_, stderr, err := runMF(dir, "psql", "nosuch")
+	if err == nil {
+		t.Fatal("expected error for unknown service")
+	}
+	if !strings.Contains(stderr, "unknown service") {
+		t.Errorf("expected 'unknown service' error, got: %s", stderr)
+	}
+
+	// Flag-like first arg should NOT trip the service check (it reaches the
+	// docker exec stage which fails in this test env — that's fine, we just
+	// want to assert it got past arg parsing).
+	_, stderr, err = runMF(dir, "psql", "-c", `\dt`)
+	if err == nil {
+		return // unlikely but ok
+	}
+	if strings.Contains(stderr, "unknown service") {
+		t.Errorf("flag-like first arg should not be treated as a service name, got: %s", stderr)
+	}
+}
+
 func TestFileCompletionDirectives(t *testing.T) {
 	dir := t.TempDir()
 
