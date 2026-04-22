@@ -1,10 +1,10 @@
 .PHONY: install test release
 
 install:
-	go build -o out/mf . && sudo cp out/mf /usr/local/bin/mf && sudo xattr -cr /usr/local/bin/mf && sudo codesign --force --sign - /usr/local/bin/mf
+	mise exec -- go build -o out/mf . && sudo cp out/mf /usr/local/bin/mf && sudo xattr -cr /usr/local/bin/mf && sudo codesign --force --sign - /usr/local/bin/mf
 
 test:
-	go test ./...
+	mise exec -- go test ./...
 
 release:
 	$(eval LATEST := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0"))

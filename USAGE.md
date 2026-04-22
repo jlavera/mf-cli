@@ -140,6 +140,10 @@ mf rebuild
 # Rebuild just the backend
 mf rebuild web
 
+# Rebuild with a full reset (removes volumes first)
+mf rebuild --clean
+mf rebuild -c
+
 # Build without the nuclear option
 mf build web
 mf build --no-cache web

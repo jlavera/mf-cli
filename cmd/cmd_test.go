@@ -314,6 +314,41 @@ func TestServiceArgAccepted(t *testing.T) {
 	}
 }
 
+// TestRebuildCleanFlagHelp verifies the --clean/-c flag is advertised.
+func TestRebuildCleanFlagHelp(t *testing.T) {
+	stdout, _, err := runMF("", "rebuild", "--help")
+	if err != nil {
+		t.Fatalf("mf rebuild --help failed: %v", err)
+	}
+	for _, s := range []string{"--clean", "-c", "volumes"} {
+		if !strings.Contains(stdout, s) {
+			t.Errorf("rebuild --help missing %q, got:\n%s", s, stdout)
+		}
+	}
+}
+
+// TestRebuildCleanWithServicesAborts verifies that combining --clean with
+// service args aborts with a clear explanation (before invoking docker-compose).
+func TestRebuildCleanWithServicesAborts(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "mf.yaml"), []byte(`project: test
+compose_file: docker-compose.yml
+services:
+  - name: web
+    type: python
+`), 0644)
+
+	_, stderr, err := runMF(dir, "rebuild", "-c", "web")
+	if err == nil {
+		t.Fatal("expected error when combining --clean with services")
+	}
+	for _, s := range []string{"--clean", "cannot be combined", "volumes"} {
+		if !strings.Contains(stderr, s) {
+			t.Errorf("expected stderr to contain %q, got: %s", s, stderr)
+		}
+	}
+}
+
 func TestNoConfigError(t *testing.T) {
 	dir := t.TempDir()
 	// Commands that require config should fail gracefully
