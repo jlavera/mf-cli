@@ -8,6 +8,9 @@ project: my-project
 # Docker Compose file to use (default: docker-compose.yml)
 compose_file: docker-compose.yml
 
+# Env file passed to docker-compose --env-file (default: .env)
+env_file: .env
+
 # Services detected from docker-compose, each with a type.
 # The type determines how mf interacts with the service:
 #   App types (python, nodejs, ruby, java, go) → mf shell, mf test, mf format, mf lint

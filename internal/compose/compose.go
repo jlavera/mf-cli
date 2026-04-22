@@ -18,9 +18,13 @@ func New(cfg *config.Config) *Compose {
 	return &Compose{cfg: cfg}
 }
 
-// baseArgs returns the base docker-compose args (file flag).
+// baseArgs returns the base docker-compose args (file flag, env file if set).
 func (c *Compose) baseArgs() []string {
-	return []string{"-f", c.cfg.ComposeFile}
+	args := []string{"-f", c.cfg.ComposeFile}
+	if c.cfg.EnvFile != "" {
+		args = append(args, "--env-file", c.cfg.EnvFile)
+	}
+	return args
 }
 
 // run builds the full arg list and executes docker-compose.

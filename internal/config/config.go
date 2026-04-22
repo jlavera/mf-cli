@@ -12,6 +12,7 @@ import (
 type Config struct {
 	Project     string        `yaml:"project"`
 	ComposeFile string        `yaml:"compose_file"`
+	EnvFile     string        `yaml:"env_file"`
 	Services    []Service     `yaml:"services"`
 	E2E         E2EConfig     `yaml:"e2e,omitempty"`
 	Scripts     ScriptsConfig `yaml:"scripts,omitempty"`
@@ -176,7 +177,7 @@ const header = `# mf - docker-compose project manager
 #   mf pre-commit [--all] [--local]   Run pre-commit hooks
 #   mf debug check|clean      Inspect/kill debug port (default 5679)
 #   mf update                    Update mf to the latest version
-#   mf init [-f file] [--force]       (Re)generate this file from a compose file
+#   mf init [-f file] [-e env-file] [--force]   (Re)generate this file from a compose file
 #
 # Stack Commands:
 #   mf celery start|stop|restart|logs   Manage Celery workers
@@ -204,6 +205,9 @@ func Write(path string, cfg *Config) error {
 func applyDefaults(cfg *Config) {
 	if cfg.ComposeFile == "" {
 		cfg.ComposeFile = "docker-compose.yml"
+	}
+	if cfg.EnvFile == "" {
+		cfg.EnvFile = ".env"
 	}
 	// If no backend exists, add a default "web" python entry.
 	if cfg.Backend() == "" {

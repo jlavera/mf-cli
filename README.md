@@ -62,6 +62,7 @@ Detects:
 ```bash
 mf init                              # auto-detect compose file in CWD
 mf init --file path/to/compose.yml   # specify compose file
+mf init --env-file .env.dev          # custom env file (default: .env; passed as docker-compose --env-file)
 mf init --force                      # overwrite existing mf.yaml
 ```
 

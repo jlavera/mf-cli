@@ -45,6 +45,9 @@ This scans your compose file, detects all services, and generates an `mf.yaml` c
 # Point to a specific compose file
 mf init --file path/to/docker-compose.prod.yml
 
+# Use a custom env file (default: .env; stored in mf.yaml; passed as docker-compose --env-file)
+mf init --env-file .env.dev
+
 # Overwrite existing mf.yaml without prompting
 mf init --force
 ```

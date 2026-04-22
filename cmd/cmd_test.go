@@ -77,6 +77,9 @@ func TestInitHelp(t *testing.T) {
 	if !strings.Contains(stdout, "--file") {
 		t.Error("init help missing --file flag")
 	}
+	if !strings.Contains(stdout, "--env-file") {
+		t.Error("init help missing --env-file flag")
+	}
 	if !strings.Contains(stdout, "--force") {
 		t.Error("init help missing --force flag")
 	}
@@ -156,6 +159,47 @@ func TestInitWithFileFlag(t *testing.T) {
 
 	if !strings.Contains(stdout, "found 1 services") {
 		t.Errorf("expected '1 services' in output, got:\n%s", stdout)
+	}
+}
+
+func TestInitWithEnvFileFlag(t *testing.T) {
+	dir := t.TempDir()
+	composeContent := `services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+`
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeContent), 0644)
+
+	stdout, stderr, err := runMF(dir, "init", "--env-file", ".env.dev")
+	if err != nil {
+		t.Fatalf("mf init --env-file failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "mf.yaml"))
+	if err != nil {
+		t.Fatalf("mf.yaml not created: %v", err)
+	}
+	if !strings.Contains(string(data), "env_file: .env.dev") {
+		t.Errorf("expected 'env_file: .env.dev' in mf.yaml, got:\n%s", string(data))
+	}
+}
+
+func TestInitDefaultEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	composeContent := `services:
+  web:
+    build: .
+`
+	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeContent), 0644)
+
+	if _, _, err := runMF(dir, "init"); err != nil {
+		t.Fatalf("mf init failed: %v", err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "mf.yaml"))
+	if !strings.Contains(string(data), "env_file: .env") {
+		t.Errorf("expected default 'env_file: .env' in mf.yaml, got:\n%s", string(data))
 	}
 }
 

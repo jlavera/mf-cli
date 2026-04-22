@@ -27,12 +27,14 @@ in the current directory. Use --file to specify a different path.`,
 }
 
 var (
-	initFile  string
-	initForce bool
+	initFile    string
+	initEnvFile string
+	initForce   bool
 )
 
 func init() {
 	initCmd.Flags().StringVarP(&initFile, "file", "f", "", "path to docker-compose file")
+	initCmd.Flags().StringVarP(&initEnvFile, "env-file", "e", ".env", "path to env file passed to docker-compose --env-file")
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite existing mf.yaml without prompting")
 	initCmd.RegisterFlagCompletionFunc("file", completeComposeFiles)
 	initCmd.GroupID = "general"
@@ -75,6 +77,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// 6. Build config from detected services
 	newCfg := buildConfig(projectName, filepath.Base(composePath), detected)
+	newCfg.EnvFile = initEnvFile
 
 	// 7. Detect frontend/e2e paths from filesystem
 	detectProjectPaths(cwd, &newCfg)

@@ -201,3 +201,26 @@ func TestDownVolumes(t *testing.T) {
 	}
 	assertArgs(t, readArgs(t, argsFile), []string{"-f", "docker-compose.yml", "down", "-v"})
 }
+
+// TestEnvFile_Propagated verifies that when EnvFile is set on the config,
+// docker-compose is invoked with --env-file <path> right after -f.
+func TestEnvFile_Propagated(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	script := "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > " + argsFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose"), []byte(script), 0755); err != nil {
+		t.Fatalf("create fake docker-compose: %v", err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+
+	cfg := &config.Config{ComposeFile: "docker-compose.yml", EnvFile: ".env.dev"}
+	c := New(cfg)
+	if err := c.Up("web"); err != nil {
+		t.Fatalf("Up(web) error: %v", err)
+	}
+	assertArgs(t, readArgs(t, argsFile), []string{
+		"-f", "docker-compose.yml",
+		"--env-file", ".env.dev",
+		"up", "-d", "web",
+	})
+}
