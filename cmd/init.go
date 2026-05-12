@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/jlavera/mf-cli/internal/compose"
 	"github.com/jlavera/mf-cli/internal/config"
 	"github.com/jlavera/mf-cli/internal/nodejs"
@@ -82,15 +83,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// 7. Detect frontend/e2e paths from filesystem
 	detectProjectPaths(cwd, &newCfg)
 
-	// 8. Write config
+	// 8. Prompt for local DNS configuration
+	promptDNS(&newCfg)
+
+	// 9. Write config
 	if err := config.Write(outputPath, &newCfg); err != nil {
 		return err
 	}
 
-	// 9. Print summary
+	// 10. Print summary
 	printSummary(composePath, detected, newCfg, outputPath)
 
-	// 10. Install shell completions
+	// 11. Install shell completions
 	setupCompletions()
 
 	return nil
@@ -368,6 +372,42 @@ func installFishCompletions() {
 
 	fmt.Printf("\n✅ Installed fish completions → %s\n", dest)
 	fmt.Println("   Completions are active in new shell sessions.")
+}
+
+// promptDNS asks the user whether to enable local DNS and, if so, which TLD and address to use.
+func promptDNS(cfg *config.Config) {
+	var enableDNS = true
+
+	err := huh.NewConfirm().
+		Title("Enable local DNS?").
+		Description("Services accessible via name instead of localhost:port").
+		Affirmative("Yes").
+		Negative("No").
+		Value(&enableDNS).
+		Run()
+	if err != nil || !enableDNS {
+		return
+	}
+
+	cfg.DNS.Enabled = true
+	cfg.DNS.TLD = "mf"
+	cfg.DNS.Address = "127.0.0.1"
+
+	err = huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("TLD suffix").
+				Description("e.g. web.my-project.<tld>").
+				Value(&cfg.DNS.TLD),
+			huh.NewInput().
+				Title("DNS address").
+				Description("IP address returned by the DNS server").
+				Value(&cfg.DNS.Address),
+		),
+	).Run()
+	if err != nil {
+		cfg.DNS.Enabled = false
+	}
 }
 
 // fileContains reports whether the file at path contains the given substring.

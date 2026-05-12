@@ -14,6 +14,7 @@ type Config struct {
 	ComposeFile string        `yaml:"compose_file"`
 	EnvFile     string        `yaml:"env_file"`
 	Services    []Service     `yaml:"services"`
+	DNS         DNSConfig     `yaml:"dns,omitempty"`
 	E2E         E2EConfig     `yaml:"e2e,omitempty"`
 	Scripts     ScriptsConfig `yaml:"scripts,omitempty"`
 	Test        TestConfig    `yaml:"test,omitempty"`
@@ -110,6 +111,13 @@ func (c *Config) FindService(name string) *Service {
 		}
 	}
 	return nil
+}
+
+// DNSConfig holds local DNS resolution settings.
+type DNSConfig struct {
+	Enabled bool   `yaml:"enabled,omitempty"`
+	TLD     string `yaml:"tld,omitempty"`     // TLD suffix (default: "mf")
+	Address string `yaml:"address,omitempty"` // IP returned by DNS (default: "127.0.0.1")
 }
 
 // E2EConfig holds end-to-end testing settings.
@@ -223,6 +231,14 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Test.DebugPort == 0 {
 		cfg.Test.DebugPort = 5679
+	}
+	if cfg.DNS.Enabled {
+		if cfg.DNS.TLD == "" {
+			cfg.DNS.TLD = "mf"
+		}
+		if cfg.DNS.Address == "" {
+			cfg.DNS.Address = "127.0.0.1"
+		}
 	}
 	if cfg.E2E.Browser == "" && cfg.E2E.Path != "" {
 		cfg.E2E.Browser = "chromium"
