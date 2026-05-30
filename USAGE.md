@@ -199,6 +199,133 @@ mf redis-cli PING
 
 ---
 
+## Local DNS & HTTPS (macOS)
+
+Instead of remembering `localhost:3000`, `localhost:3001`, etc., reach each service by name over HTTPS: `https://web.my-project.mf`, `https://api.my-project.mf`. This feature is **macOS only** and ships entirely inside the `mf` binary — no Homebrew, dnsmasq, mkcert, or Docker proxy containers required.
+
+### How it works (the 30-second version)
+
+```
+Browser → https://web.my-project.mf
+   │
+   │  1. macOS sees ".mf" and (via /etc/resolver/mf) asks mf's DNS server
+   │  2. DNS server answers 127.0.0.1
+   │  3. Browser connects to 127.0.0.1:443 with Host: web.my-project.mf
+   │  4. mf's reverse proxy matches the host and forwards to localhost:3000
+   ▼
+Your container
+```
+
+- A small **DNS daemon** resolves `*.<tld>` (default `*.mf`) to `127.0.0.1`.
+- A **reverse proxy** on ports 80/443 routes by hostname to the published container port, terminating HTTPS with a locally-trusted certificate.
+
+Both run as root system services (macOS LaunchDaemons) so they survive reboots and can bind privileged ports / write to `/etc/resolver`.
+
+### Step 1 — Install the machine-wide services (once)
+
+```bash
+sudo mf dns install
+sudo mf proxy install
+```
+
+These require administrator access because they:
+
+- `mf dns install` — write `/etc/resolver/mf` (tells macOS to send `*.mf` lookups to mf) and install a DNS LaunchDaemon.
+- `mf proxy install` — add a local HTTPS certificate authority to your System keychain and install a proxy LaunchDaemon that binds ports 80/443.
+
+If you run them without `sudo`, `mf` prints exactly what it needs and why, then re-runs itself under `sudo` (you'll get the standard password prompt). You only do this once per machine; the services auto-start on every boot.
+
+### Step 2 — Enable DNS for a project
+
+During `mf init` you'll be asked "Enable local DNS?" — answering yes adds this to your `mf.yaml`:
+
+```yaml
+dns:
+  enabled: true       # required to turn the feature on
+  tld: mf             # hostname suffix → web.my-project.mf  (default: mf)
+  address: 127.0.0.1  # IP the DNS server returns           (default: 127.0.0.1)
+```
+
+You can also add the block by hand. If `dns.enabled` is absent or `false`, nothing changes — `mf up`/`down` behave exactly as before.
+
+### Step 3 — Start your stack
+
+```bash
+mf up
+```
+
+For every service that publishes a port, `mf` registers a route and prints it:
+
+```
+🌐 Local DNS routes:
+   https://web.my-project.mf → http://localhost:3000
+   https://api.my-project.mf → http://localhost:3001
+```
+
+Open `https://web.my-project.mf` in your browser — the certificate is already trusted. `mf down` removes the project's routes. The proxy picks up route changes within a couple of seconds (it polls the routes directory), so there's no daemon restart on `up`/`down`.
+
+### Hostnames
+
+The auto-derived format is `<service>.<compose-project>.<tld>`. The compose-project segment comes from the `name:` field in your compose file, or the directory name. This keeps multiple projects from colliding:
+
+```
+project "shop":  web.shop.mf,  api.shop.mf
+project "blog":  web.blog.mf,  api.blog.mf
+```
+
+Override or opt out per service in `mf.yaml`:
+
+```yaml
+services:
+  - name: admin
+    type: nodejs
+    hostname: backoffice.my-project.mf   # use this exact hostname
+  - name: worker
+    type: celery_worker
+    hostname: false                      # never give this service a hostname
+```
+
+Services without a published port are skipped automatically — there's nothing to proxy to.
+
+### Multiple projects & TLD conflicts
+
+The DNS resolver file (`/etc/resolver/<tld>`) is the single source of truth and is shared by all projects. If a second project tries to `mf dns install` a `tld` that's already mapped to a different address, `mf` refuses with a clear error instead of silently clobbering it. Projects that share the same `tld`/`address` just work together.
+
+### Managing the daemons
+
+```bash
+# DNS
+mf dns status              # running? show resolver config + a live test lookup
+mf dns stop                # stop the daemon now (sudo; comes back on next boot)
+mf dns uninstall           # remove resolver file + daemon entirely (sudo)
+
+# Proxy
+mf proxy status            # running? list every active route across all projects
+mf proxy stop              # stop the daemon now (sudo; comes back on next boot)
+mf proxy uninstall         # untrust the CA + remove the daemon (sudo)
+```
+
+`stop` is a temporary pause (handy if you need port 80/443 for something else); `uninstall` is the full teardown.
+
+### Where things live
+
+| Path                                         | What                                        |
+| -------------------------------------------- | ------------------------------------------- |
+| `/etc/resolver/<tld>`                        | Tells macOS to resolve `*.<tld>` via mf     |
+| `/Library/LaunchDaemons/com.mf-cli.dns.plist`   | DNS service definition                   |
+| `/Library/LaunchDaemons/com.mf-cli.proxy.plist` | Proxy service definition                 |
+| `/Library/Application Support/mf/ca/`        | Local HTTPS certificate authority           |
+| `/Library/Application Support/mf/routes/`    | One JSON file per project with its routes   |
+
+### Troubleshooting
+
+- **`https://…mf` doesn't resolve** — run `mf dns status`. If the daemon isn't running, `sudo mf dns start` or re-run `sudo mf dns install`. Confirm `/etc/resolver/<tld>` exists.
+- **Browser shows a certificate warning** — re-run `sudo mf proxy install` to (re)trust the CA, and fully restart the browser.
+- **`502 no route for host`** — the service isn't started or doesn't publish a port. Check `mf status` and `mf proxy status`; make sure the service has a `ports:` mapping in compose.
+- **Logs** — the daemons log to `/tmp/mf-dns.log` and `/tmp/mf-proxy.log`.
+
+---
+
 ## Running Tests
 
 ```bash
@@ -315,6 +442,26 @@ mf debug check
 # Kill processes on debug ports
 mf debug clean
 ```
+
+---
+
+## AI Agent Rule
+
+If you use an AI coding assistant (Cursor, Claude, etc.), `mf rule` gives you a ready-to-paste
+guide that teaches it to drive this project through `mf` instead of raw `docker`/`docker-compose`.
+
+```bash
+# Print the rule (write it straight to a file)
+mf rule > .cursor/rules/mf.md
+mf rule > AGENTS.md
+
+# Or copy it to your clipboard, then paste into your assistant's setup
+mf rule --copy
+```
+
+Good places to put it: a [Cursor rule](https://docs.cursor.com/context/rules) under `.cursor/rules/`,
+an `AGENTS.md` / `CLAUDE.md` at the repo root, or any system/project prompt. If the clipboard isn't
+available (e.g. over SSH), `mf rule --copy` falls back to printing so you can copy it manually.
 
 ---
 

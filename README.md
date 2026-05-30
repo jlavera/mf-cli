@@ -59,6 +59,8 @@ Detects:
 - **Storage** — MinIO, LocalStack
 - **Apps** — Python, Node.js, Ruby, Go, Java detection from commands and images
 
+It also asks whether to enable [local DNS & HTTPS](#local-dns--https-macos) (macOS), letting you reach services as `https://web.my-project.mf`.
+
 ```bash
 mf init                              # auto-detect compose file in CWD
 mf init --file path/to/compose.yml   # specify compose file
@@ -98,7 +100,12 @@ mf pre-commit [--all] [--local]      # run pre-commit hooks
 mf debug check                       # check if debug ports are in use
 mf debug clean                       # kill debug port processes
 mf update                            # update mf to the latest version
+
+mf rule                              # print an AI-agent usage guide (e.g. > .cursor/rules/mf.md)
+mf rule --copy                       # copy it to the clipboard instead
 ```
+
+`mf rule` gives you a ready-to-paste guide that teaches an AI assistant how to drive this project with `mf`. Drop it into a [Cursor rule](https://docs.cursor.com/context/rules), `AGENTS.md`, `CLAUDE.md`, or any system/project prompt.
 
 ### Stack Commands
 
@@ -118,6 +125,79 @@ mf e2e debug                         # debug mode
 mf e2e report                        # view HTML report
 ```
 
+## Local DNS & HTTPS (macOS)
+
+Reach your services by name — `https://web.my-project.mf` instead of `localhost:3000`. This is **macOS only** and built entirely into the `mf` binary (no Homebrew, dnsmasq, or external tools).
+
+It has two pieces, both installed once per machine and shared by every project:
+
+- **DNS** — a tiny resolver that points `*.<tld>` (default `*.mf`) at `127.0.0.1`, wired up through macOS's `/etc/resolver`.
+- **Proxy** — a reverse proxy on ports 80/443 that routes by hostname to the right container port, with automatic HTTPS via a locally-trusted certificate authority.
+
+### One-time machine setup
+
+```bash
+sudo mf dns install      # resolve *.mf to 127.0.0.1 (writes /etc/resolver/mf + runs a DNS daemon)
+sudo mf proxy install    # trust a local HTTPS CA + run the reverse proxy on :80/:443
+```
+
+Both run as root system services (LaunchDaemons), so they need `sudo`. If you forget it, `mf` explains why and re-runs itself under `sudo` for you. You only do this once — the services start automatically on boot.
+
+### Enable it for a project
+
+Add a `dns:` block to the project's `mf.yaml` (or answer "yes" to the prompt during `mf init`):
+
+```yaml
+dns:
+  enabled: true      # required to activate (default: false)
+  tld: mf            # hostname suffix (default: mf)
+  address: 127.0.0.1 # IP the DNS server returns (default: 127.0.0.1)
+```
+
+Then start your stack as usual:
+
+```bash
+mf up
+```
+
+`mf up` registers a route for every service that publishes a port and prints the URLs:
+
+```
+🌐 Local DNS routes:
+   https://web.my-project.mf → http://localhost:3000
+   https://api.my-project.mf → http://localhost:3001
+```
+
+`mf down` removes the routes again. The hostname format is `<service>.<compose-project>.<tld>`, so two projects can each have a `web` service without colliding (`web.shop.mf` vs `web.blog.mf`).
+
+#### Per-service hostnames
+
+```yaml
+services:
+  - name: admin
+    type: nodejs
+    hostname: backoffice.my-project.mf   # override the auto-derived name
+  - name: worker
+    type: celery_worker
+    hostname: false                      # opt this service out
+```
+
+Services without a published port are skipped automatically (there's nothing to proxy to).
+
+### Managing the daemons
+
+```bash
+mf dns status              # is the DNS daemon running? show resolver config + a test lookup
+mf dns stop                # stop the DNS daemon (sudo; restarts on next boot)
+mf dns uninstall           # remove the resolver file + DNS daemon (sudo)
+
+mf proxy status            # is the proxy running? list active routes
+mf proxy stop              # stop the proxy daemon (sudo; restarts on next boot)
+mf proxy uninstall         # untrust the CA + remove the proxy daemon (sudo)
+```
+
+See [USAGE.md](USAGE.md#local-dns--https-macos) for a deeper walkthrough and troubleshooting.
+
 ## Configuration
 
 `mf init` generates the config. See `[mf.example.yaml](mf.example.yaml)` for a fully commented example.
@@ -127,7 +207,8 @@ mf e2e report                        # view HTML report
 | -------------- | -------------------------------------------------------------------------------------------------------- |
 | `project`      | Project name                                                                                             |
 | `compose_file` | Path to docker-compose file                                                                              |
-| `services`     | List of services, each with `name`, `type`, and optional `db_name`, `db_user`, `path`, `package_manager` |
+| `services`     | List of services, each with `name`, `type`, and optional `hostname`, `db_name`, `db_user`, `path`, `package_manager` |
+| `dns`          | Local DNS + HTTPS: `enabled`, `tld`, `address` (macOS only)                                              |
 | `e2e`          | Path, framework, browser for e2e commands                                                                |
 | `scripts`      | Paths to project scripts (format, lint, pre-commit)                                                      |
 | `test`         | Test runner, env vars, debug port                                                                        |

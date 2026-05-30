@@ -22,6 +22,20 @@ var statusCmd = &cobra.Command{
 			byService[cs.Service] = cs
 		}
 
+		// Resolve hostnames if DNS is enabled
+		var hostnames map[string]string
+		if cfg.DNS.Enabled {
+			cf, parseErr := compose.ParseComposeFile(cfg.ComposeFile)
+			if parseErr == nil {
+			projectName := dnsProjectName(cf)
+			ports := make(map[string][]string)
+				for name, svc := range cf.Services {
+					ports[name] = compose.ExtractPortsPublic(svc.Ports)
+				}
+				hostnames = cfg.ResolveHostnames(projectName, ports)
+			}
+		}
+
 		maxName := 0
 		maxType := 0
 		maxState := len("not created")
@@ -57,7 +71,12 @@ var statusCmd = &cobra.Command{
 				svcType = "-"
 			}
 			line := fmt.Sprintf("  %s %-*s  %-*s  %-*s", icon, maxName, svc.Name, maxType, svcType, maxState, state)
-			if ports != "" {
+			if hostname, ok := hostnames[svc.Name]; ok {
+				line += fmt.Sprintf("  https://%s", hostname)
+				if ports != "" {
+					line += " → " + ports
+				}
+			} else if ports != "" {
 				line += "  " + ports
 			}
 			fmt.Println(line)

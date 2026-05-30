@@ -12,7 +12,17 @@ import (
 
 // ComposeFile represents the relevant parts of a docker-compose file.
 type ComposeFile struct {
+	Name     string                       `yaml:"name"`
 	Services map[string]ComposeService `yaml:"services"`
+}
+
+// ProjectName returns the compose project name. Falls back to the parent
+// directory name of composePath if the file has no explicit name: field.
+func (cf *ComposeFile) ProjectName(composePath string) string {
+	if cf.Name != "" {
+		return cf.Name
+	}
+	return filepath.Base(filepath.Dir(composePath))
 }
 
 // ComposeService represents a single service in a compose file.
@@ -463,6 +473,11 @@ func extractEnvMap(env interface{}) map[string]string {
 	return result
 }
 
+// ExtractPortsPublic is the exported version of extractPorts for use by other packages.
+func ExtractPortsPublic(ports interface{}) []string {
+	return extractPorts(ports)
+}
+
 // extractPorts normalizes the ports field to a string slice.
 func extractPorts(ports interface{}) []string {
 	if ports == nil {
@@ -489,15 +504,6 @@ func extractPorts(ports interface{}) []string {
 		}
 	}
 	return result
-}
-
-// extractHostPort extracts the host port from a port mapping string like "8000:8000".
-func extractHostPort(portMapping string) string {
-	parts := strings.Split(portMapping, ":")
-	if len(parts) >= 2 {
-		return parts[0]
-	}
-	return portMapping
 }
 
 // stripEnvInterpolation extracts the default value from bash-style variable

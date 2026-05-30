@@ -24,6 +24,7 @@ type Config struct {
 type Service struct {
 	Name           string `yaml:"name"`
 	Type           string `yaml:"type"`                      // python, nodejs, postgres, mysql, mongo, redis, celery_worker, celery_beat, flower, proxy, mail, storage, …
+	Hostname       string `yaml:"hostname,omitempty"`         // DNS hostname override; "false" to opt out
 	DBName         string `yaml:"db_name,omitempty"`
 	DBUser         string `yaml:"db_user,omitempty"`
 	Path           string `yaml:"path,omitempty"`             // local project directory (e.g. ./frontend)
@@ -120,6 +121,41 @@ type DNSConfig struct {
 	Address string `yaml:"address,omitempty"` // IP returned by DNS (default: "127.0.0.1")
 }
 
+const DefaultDNSPort = 5354
+
+// ResolveHostnames derives hostnames for services that are routable (i.e. have
+// at least one published port). A service is skipped when it has no ports or
+// when its hostname is explicitly set to "false". An explicit hostname value
+// overrides the auto-derived <service>.<project>.<tld> name.
+//
+// Requiring a published port keeps `mf status` and the routes written by
+// `mf up` consistent: a hostname is only reported when it can actually be
+// proxied to a backend.
+//
+// projectName is the compose project name (from compose file name: or directory).
+// ports maps service name → list of port mappings from the compose file.
+func (c *Config) ResolveHostnames(projectName string, ports map[string][]string) map[string]string {
+	result := make(map[string]string)
+	if !c.DNS.Enabled {
+		return result
+	}
+	for i := range c.Services {
+		svc := &c.Services[i]
+		if svc.Hostname == "false" {
+			continue
+		}
+		if len(ports[svc.Name]) == 0 {
+			continue
+		}
+		if svc.Hostname != "" {
+			result[svc.Name] = svc.Hostname
+			continue
+		}
+		result[svc.Name] = svc.Name + "." + projectName + "." + c.DNS.TLD
+	}
+	return result
+}
+
 // E2EConfig holds end-to-end testing settings.
 type E2EConfig struct {
 	Path      string `yaml:"path,omitempty"`
@@ -186,6 +222,8 @@ const header = `# mf - docker-compose project manager
 #   mf debug check|clean      Inspect/kill debug port (default 5679)
 #   mf update                    Update mf to the latest version
 #   mf init [-f file] [-e env-file] [--force]   (Re)generate this file from a compose file
+#   mf dns install|uninstall|start|stop|status   Local DNS for .mf domains
+#   mf proxy install|uninstall|start|stop|status   Reverse proxy with HTTPS
 #
 # Stack Commands:
 #   mf celery start|stop|restart|logs   Manage Celery workers

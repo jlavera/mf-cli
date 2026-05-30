@@ -22,6 +22,8 @@ env_file: .env
 services:
   - name: web
     type: python
+    # hostname: web.my-project.mf   # (optional) override the auto-derived DNS hostname
+                                     #            set to false to opt this service out
   - name: db
     type: postgres
     db_name: mydb
@@ -36,6 +38,14 @@ services:
     type: nodejs
     path: ./frontend
     package_manager: npm
+
+# Local DNS + HTTPS (macOS only). Reach services by name, e.g. https://web.my-project.mf
+# One-time machine setup: `sudo mf dns install` and `sudo mf proxy install`.
+# Hostnames are derived as <service>.<compose-project>.<tld> for services that publish a port.
+dns:
+  enabled: false            # set to true to activate
+  tld: mf                   # hostname suffix (default: mf)
+  address: 127.0.0.1        # IP the DNS server returns (default: 127.0.0.1)
 
 # End-to-end testing settings
 e2e:
