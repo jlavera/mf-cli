@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/jlavera/mf-cli/internal/compose"
 	"github.com/jlavera/mf-cli/internal/config"
@@ -10,10 +11,11 @@ import (
 )
 
 var (
-	cfgFile    string
-	cfg        *config.Config
-	comp       *compose.Compose
-	appVersion = "dev"
+	cfgFile     string
+	profileFlag string
+	cfg         *config.Config
+	comp        *compose.Compose
+	appVersion  = "dev"
 )
 
 // SetVersion is called from main to inject the build-time version.
@@ -34,6 +36,7 @@ file in your project root (run 'mf init' to generate one).`,
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", config.DefaultConfigFile, "config file path")
+	rootCmd.PersistentFlags().StringVar(&profileFlag, "profile", "", "comma-separated docker-compose profiles to enable (merged with mf.yaml profiles)")
 
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "general", Title: "General Commands:"},
@@ -71,7 +74,27 @@ func loadConfig() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+	mergeProfileFlags()
 	comp = compose.New(cfg)
+}
+
+// mergeProfileFlags appends the comma-separated --profile values from the CLI
+// onto the profiles declared in mf.yaml, de-duplicating while preserving order.
+func mergeProfileFlags() {
+	if cfg == nil || profileFlag == "" {
+		return
+	}
+	seen := make(map[string]bool, len(cfg.Profiles))
+	for _, p := range cfg.Profiles {
+		seen[p] = true
+	}
+	for _, p := range strings.Split(profileFlag, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			cfg.Profiles = append(cfg.Profiles, p)
+			seen[p] = true
+		}
+	}
 }
 
 // shouldSkipConfig checks if the current command should skip mandatory config loading.
@@ -123,6 +146,7 @@ func loadConfigSilent() {
 	if err != nil {
 		return // silently skip — completions will degrade gracefully
 	}
+	mergeProfileFlags()
 	comp = compose.New(cfg)
 }
 

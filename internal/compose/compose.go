@@ -24,6 +24,9 @@ func (c *Compose) baseArgs() []string {
 	if c.cfg.EnvFile != "" {
 		args = append(args, "--env-file", c.cfg.EnvFile)
 	}
+	for _, p := range c.cfg.Profiles {
+		args = append(args, "--profile", p)
+	}
 	return args
 }
 

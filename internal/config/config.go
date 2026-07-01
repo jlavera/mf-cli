@@ -13,6 +13,7 @@ type Config struct {
 	Project     string        `yaml:"project"`
 	ComposeFile string        `yaml:"compose_file"`
 	EnvFile     string        `yaml:"env_file"`
+	Profiles    []string      `yaml:"profiles,omitempty"` // docker-compose profiles to enable by default
 	Services    []Service     `yaml:"services"`
 	DNS         DNSConfig     `yaml:"dns,omitempty"`
 	E2E         E2EConfig     `yaml:"e2e,omitempty"`
@@ -230,6 +231,10 @@ const header = `# mf - docker-compose project manager
 #   mf flower logs                      Follow Flower logs
 #   mf run <service> <script> [args...]   Run a package.json script (services with path: set)
 #   mf e2e install|run|ui|headed|debug|report
+#
+# Global Flags:
+#   --config <path>     Path to this config file (default: mf.yaml)
+#   --profile a,b       Enable docker-compose profiles, comma-separated (merged with profiles: below)
 
 `
 

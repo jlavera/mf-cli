@@ -118,6 +118,26 @@ mf logs
 mf logs web
 ```
 
+### Compose profiles
+
+If your compose file gates services behind [profiles](https://docs.docker.com/compose/how-tos/profiles/), enable them with the global `--profile` flag (comma-separated, works on any command):
+
+```bash
+mf up --profile debug
+mf up --profile debug,tools
+mf logs --profile debug
+```
+
+To always enable certain profiles for the project, list them in `mf.yaml`:
+
+```yaml
+profiles:
+  - debug
+  - tools
+```
+
+Profiles from the flag and the config are merged (duplicates removed) and forwarded to docker-compose as repeated `--profile` flags.
+
 ### Stopping work
 
 ```bash

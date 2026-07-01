@@ -224,3 +224,27 @@ func TestEnvFile_Propagated(t *testing.T) {
 		"up", "-d", "web",
 	})
 }
+
+// TestProfiles_Propagated verifies that configured profiles are passed to
+// docker-compose as repeated --profile flags before the subcommand.
+func TestProfiles_Propagated(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	script := "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > " + argsFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose"), []byte(script), 0755); err != nil {
+		t.Fatalf("create fake docker-compose: %v", err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+
+	cfg := &config.Config{ComposeFile: "docker-compose.yml", Profiles: []string{"debug", "tools"}}
+	c := New(cfg)
+	if err := c.Up("web"); err != nil {
+		t.Fatalf("Up(web) error: %v", err)
+	}
+	assertArgs(t, readArgs(t, argsFile), []string{
+		"-f", "docker-compose.yml",
+		"--profile", "debug",
+		"--profile", "tools",
+		"up", "-d", "web",
+	})
+}

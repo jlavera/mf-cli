@@ -25,6 +25,13 @@ project operations. Configuration lives in `mf.yaml` at the repo root.
 | Follow logs                | `mf logs [services...]`                        |
 | Show status of each service| `mf status`                                    |
 
+### Compose profiles
+
+Services behind a docker-compose `profiles:` key are inactive by default. To include them,
+pass the global `--profile` flag (comma-separated) to any command, e.g.
+`mf up --profile debug,tools`. Profiles listed under `profiles:` in `mf.yaml` are always
+enabled and merged with the flag.
+
 ## Shells & data
 
 - `mf shell [service]` — open a shell in a container (defaults to the main app service).

@@ -105,6 +105,19 @@ mf rule                              # print an AI-agent usage guide (e.g. > .cu
 mf rule --copy                       # copy it to the clipboard instead
 ```
 
+All commands accept the global `--profile` flag to enable docker-compose [profiles](https://docs.docker.com/compose/how-tos/profiles/) (comma-separated):
+
+```bash
+mf up --profile debug,tools          # forwarded to docker-compose as --profile debug --profile tools
+```
+
+To enable profiles on every invocation, list them in `mf.yaml` instead (merged with the flag):
+
+```yaml
+profiles:
+  - debug
+```
+
 `mf rule` gives you a ready-to-paste guide that teaches an AI assistant how to drive this project with `mf`. Drop it into a [Cursor rule](https://docs.cursor.com/context/rules), `AGENTS.md`, `CLAUDE.md`, or any system/project prompt.
 
 ### Stack Commands
@@ -207,6 +220,7 @@ See [USAGE.md](USAGE.md#local-dns--https-macos) for a deeper walkthrough and tro
 | -------------- | -------------------------------------------------------------------------------------------------------- |
 | `project`      | Project name                                                                                             |
 | `compose_file` | Path to docker-compose file                                                                              |
+| `profiles`     | docker-compose profiles to always enable (merged with the global `--profile` flag)                       |
 | `services`     | List of services, each with `name`, `type`, and optional `hostname`, `db_name`, `db_user`, `path`, `package_manager` |
 | `dns`          | Local DNS + HTTPS: `enabled`, `tld`, `address` (macOS only)                                              |
 | `e2e`          | Path, framework, browser for e2e commands                                                                |
