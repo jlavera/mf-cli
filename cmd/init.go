@@ -12,6 +12,7 @@ import (
 	"github.com/jlavera/mf-cli/internal/compose"
 	"github.com/jlavera/mf-cli/internal/config"
 	"github.com/jlavera/mf-cli/internal/nodejs"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -375,7 +376,13 @@ func installFishCompletions() {
 }
 
 // promptDNS asks the user whether to enable local DNS and, if so, which TLD and address to use.
+// Skipped entirely in non-interactive contexts (tests, CI, piped input): huh/bubbletea would
+// otherwise fall back to /dev/tty and hang waiting for input that never comes.
 func promptDNS(cfg *config.Config) {
+	if !isatty.IsTerminal(os.Stdin.Fd()) && !isatty.IsCygwinTerminal(os.Stdin.Fd()) {
+		return
+	}
+
 	var enableDNS = true
 
 	err := huh.NewConfirm().

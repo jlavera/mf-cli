@@ -2,6 +2,7 @@ package compose
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 
 	"github.com/jlavera/mf-cli/internal/config"
@@ -19,10 +20,15 @@ func New(cfg *config.Config) *Compose {
 }
 
 // baseArgs returns the base docker-compose args (file flag, env file if set).
+// The env file is only passed when it exists: docker-compose treats an explicit
+// --env-file as required, but we want to match its implicit-.env behavior of
+// silently skipping a missing file.
 func (c *Compose) baseArgs() []string {
 	args := []string{"-f", c.cfg.ComposeFile}
 	if c.cfg.EnvFile != "" {
-		args = append(args, "--env-file", c.cfg.EnvFile)
+		if _, err := os.Stat(c.cfg.EnvFile); err == nil {
+			args = append(args, "--env-file", c.cfg.EnvFile)
+		}
 	}
 	for _, p := range c.cfg.Profiles {
 		args = append(args, "--profile", p)

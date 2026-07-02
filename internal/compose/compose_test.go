@@ -202,8 +202,8 @@ func TestDownVolumes(t *testing.T) {
 	assertArgs(t, readArgs(t, argsFile), []string{"-f", "docker-compose.yml", "down", "-v"})
 }
 
-// TestEnvFile_Propagated verifies that when EnvFile is set on the config,
-// docker-compose is invoked with --env-file <path> right after -f.
+// TestEnvFile_Propagated verifies that when EnvFile is set on the config and
+// the file exists, docker-compose is invoked with --env-file <path> right after -f.
 func TestEnvFile_Propagated(t *testing.T) {
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args.txt")
@@ -212,6 +212,10 @@ func TestEnvFile_Propagated(t *testing.T) {
 		t.Fatalf("create fake docker-compose: %v", err)
 	}
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Chdir(dir)
+	if err := os.WriteFile(filepath.Join(dir, ".env.dev"), []byte("FOO=bar\n"), 0644); err != nil {
+		t.Fatalf("create .env.dev: %v", err)
+	}
 
 	cfg := &config.Config{ComposeFile: "docker-compose.yml", EnvFile: ".env.dev"}
 	c := New(cfg)
@@ -221,6 +225,30 @@ func TestEnvFile_Propagated(t *testing.T) {
 	assertArgs(t, readArgs(t, argsFile), []string{
 		"-f", "docker-compose.yml",
 		"--env-file", ".env.dev",
+		"up", "-d", "web",
+	})
+}
+
+// TestEnvFile_MissingSkipped verifies that a configured env file that doesn't
+// exist is silently omitted from the docker-compose args instead of causing
+// every command to fail with "env file not found".
+func TestEnvFile_MissingSkipped(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args.txt")
+	script := "#!/bin/sh\nfor a in \"$@\"; do echo \"$a\"; done > " + argsFile + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose"), []byte(script), 0755); err != nil {
+		t.Fatalf("create fake docker-compose: %v", err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	t.Chdir(dir)
+
+	cfg := &config.Config{ComposeFile: "docker-compose.yml", EnvFile: ".env"}
+	c := New(cfg)
+	if err := c.Up("web"); err != nil {
+		t.Fatalf("Up(web) error: %v", err)
+	}
+	assertArgs(t, readArgs(t, argsFile), []string{
+		"-f", "docker-compose.yml",
 		"up", "-d", "web",
 	})
 }
