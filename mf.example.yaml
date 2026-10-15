@@ -13,7 +13,7 @@ env_file: .env
 
 # Services detected from docker-compose, each with a type.
 # The type determines how mf interacts with the service:
-#   App types (python, nodejs, ruby, java, go) → mf shell, mf test, mf format, mf lint
+#   App types (python, nodejs, ruby, java, go) → mf shell (default service)
 #   DB types (postgres, mysql, mongo)          → mf psql
 #   redis                                      → mf redis-cli
 #   celery_worker, celery_beat                 → mf celery start/stop/restart/logs
@@ -57,13 +57,3 @@ e2e:
 scripts:
   pre_commit: ./scripts/pre-commit-docker.sh
   pre_commit_local: ./scripts/pre-commit-local-docker.sh
-  format: ./scripts/docker-black.sh
-  lint: ./scripts/docker-pylint.sh
-  ruff: ./scripts/docker-ruff.sh
-
-# Test runner configuration
-test:
-  runner: pytest            # Test runner command
-  env:                      # Environment variables passed during tests
-    ENV: test
-  debug_port: 5679          # Port for debugpy attachment

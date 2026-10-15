@@ -9,12 +9,12 @@ services:
       - db
       - redis
     environment:
-      - DATABASE_URL=postgres://postgres:postgres@db:5432/topline
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/myapp
 
   db:
     image: postgres:15
     environment:
-      POSTGRES_DB: topline
+      POSTGRES_DB: myapp
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:

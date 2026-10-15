@@ -53,10 +53,8 @@ func TestRootHelp(t *testing.T) {
 		"shell", "psql", "redis-cli",
 		"celery", "flower",
 		"run",
-		"test",
 		"e2e",
-		"format", "lint", "pre-commit",
-		"debug",
+		"pre-commit",
 		"init",
 		"completion",
 	}
@@ -248,10 +246,7 @@ func TestSubcommandHelp(t *testing.T) {
 	}{
 		{[]string{"celery", "--help"}, []string{"start", "stop", "restart", "logs"}},
 		{[]string{"e2e", "--help"}, []string{"install", "run", "ui", "headed", "debug", "report"}},
-		{[]string{"debug", "--help"}, []string{"check", "clean"}},
-		{[]string{"test", "--help"}, []string{"--file", "--method", "--debug"}},
 		{[]string{"build", "--help"}, []string{"--no-cache"}},
-		{[]string{"format", "--help"}, []string{"--check"}},
 		{[]string{"pre-commit", "--help"}, []string{"--all", "--local"}},
 	}
 
@@ -510,20 +505,14 @@ func TestFileCompletionDirectives(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte(composeContent), 0644)
 	runMF(dir, "init")
 
-	// Test -f completion filters to .py files
-	stdout, _, _ := runMF(dir, "__complete", "test", "--file", "")
-	if !strings.Contains(stdout, "py") {
-		t.Error("test --file completion should suggest .py extension filter")
+	// Init --file completion filters to yml/yaml
+	stdout, _, _ := runMF(dir, "__complete", "init", "--file", "")
+	if !strings.Contains(stdout, "yml") || !strings.Contains(stdout, "yaml") {
+		t.Error("init --file completion should suggest yml/yaml extension filter")
 	}
 	// Directive :8 = ShellCompDirectiveFilterFileExt
 	if !strings.Contains(stdout, ":8") {
 		t.Error("expected ShellCompDirectiveFilterFileExt (:8)")
-	}
-
-	// Init --file completion filters to yml/yaml
-	stdout, _, _ = runMF(dir, "__complete", "init", "--file", "")
-	if !strings.Contains(stdout, "yml") || !strings.Contains(stdout, "yaml") {
-		t.Error("init --file completion should suggest yml/yaml extension filter")
 	}
 }
 

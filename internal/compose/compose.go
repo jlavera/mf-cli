@@ -93,17 +93,6 @@ func (c *Compose) Exec(service string, command ...string) error {
 	return c.run(args...)
 }
 
-// ExecWithEnv executes a command with additional environment variables.
-func (c *Compose) ExecWithEnv(service string, env map[string]string, command ...string) error {
-	args := []string{"exec"}
-	for k, v := range env {
-		args = append(args, "-e", k+"="+v)
-	}
-	args = append(args, service)
-	args = append(args, command...)
-	return c.run(args...)
-}
-
 // PortMapping holds a single published port from docker-compose ps.
 type PortMapping struct {
 	URL           string `json:"URL"`

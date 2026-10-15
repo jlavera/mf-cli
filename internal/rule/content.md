@@ -37,12 +37,11 @@ enabled and merged with the flag.
 - `mf shell [service]` — open a shell in a container (defaults to the main app service).
 - `mf psql [service]` — database shell (postgres/mysql/mongo).
 - `mf redis-cli [service]` — Redis client.
-- `mf run <service> <script>` — run a `package.json` script for a service with `path:` set.
+- `mf run <service> <script>` — run a `package.json` script for a service with `path:` set
+  (e.g. `mf run api test`, `mf run frontend lint`).
 
-## Tests & code quality
+## Code quality
 
-- `mf test [apps...]` — run tests (`-f <file>`, `-m <method>`, `--debug`).
-- `mf format [--check]`, `mf lint`, `mf sort-imports`, `mf format-all`.
 - `mf pre-commit [--all] [--local]`.
 
 ## Local DNS & HTTPS (macOS)

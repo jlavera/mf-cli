@@ -32,15 +32,9 @@ services:
 	if cfg.ComposeFile != "docker-compose.yml" {
 		t.Errorf("expected default compose_file 'docker-compose.yml', got %q", cfg.ComposeFile)
 	}
-	if cfg.Test.Runner != "pytest" {
-		t.Errorf("expected default test runner 'pytest', got %q", cfg.Test.Runner)
-	}
-	if cfg.Test.DebugPort != 5679 {
-		t.Errorf("expected default debug port 5679, got %d", cfg.Test.DebugPort)
-	}
 }
 
-func TestLoadMinimalAddsDefaultBackend(t *testing.T) {
+func TestLoadMinimalHasNoBackend(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mf.yaml")
 	content := `project: bare
@@ -55,8 +49,11 @@ services: []
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if cfg.Backend() != "web" {
-		t.Errorf("expected default backend 'web', got %q", cfg.Backend())
+	if cfg.Backend() != "" {
+		t.Errorf("expected no backend, got %q", cfg.Backend())
+	}
+	if len(cfg.Services) != 0 {
+		t.Errorf("expected no services, got %v", cfg.Services)
 	}
 }
 
@@ -90,15 +87,6 @@ e2e:
   browser: firefox
 scripts:
   pre_commit: ./hooks/pre-commit.sh
-  format: ./tools/format.sh
-  lint: ./tools/lint.sh
-  ruff: ./tools/ruff.sh
-test:
-  runner: pytest
-  env:
-    ENV: test
-    DEBUG: "1"
-  debug_port: 9999
 `
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -150,11 +138,8 @@ test:
 	if cfg.E2E.Browser != "firefox" {
 		t.Errorf("e2e browser: got %q", cfg.E2E.Browser)
 	}
-	if cfg.Test.DebugPort != 9999 {
-		t.Errorf("debug port: got %d", cfg.Test.DebugPort)
-	}
-	if cfg.Test.Env["DEBUG"] != "1" {
-		t.Errorf("test env DEBUG: got %q", cfg.Test.Env["DEBUG"])
+	if cfg.Scripts.PreCommit != "./hooks/pre-commit.sh" {
+		t.Errorf("pre_commit script: got %q", cfg.Scripts.PreCommit)
 	}
 }
 

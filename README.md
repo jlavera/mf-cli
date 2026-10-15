@@ -41,7 +41,7 @@ mf init
 mf up                  # start all services
 mf logs                # follow logs
 mf shell               # shell into backend container
-mf test                # run tests
+mf run frontend test   # run a service's package.json script
 mf down                # stop everything
 ```
 
@@ -86,19 +86,7 @@ mf shell [service]                   # shell into container (default: first app-
 mf psql [service]                    # database shell (postgres/mysql/mongo); omit service if only one DB
 mf redis-cli [service]               # redis-cli (default: first redis service)
 
-mf test [apps...]                    # run all or specific app tests
-mf test -f path/to/test.py           # specific test file
-mf test -m "TestClass.method"        # specific test method
-mf test --debug                      # run with debugpy (attach from VS Code)
-
-mf format [--check]                  # format code
-mf lint                              # run linter
-mf sort-imports                      # sort Python imports
-mf format-all                        # format + lint + sort-imports
 mf pre-commit [--all] [--local]      # run pre-commit hooks
-
-mf debug check                       # check if debug ports are in use
-mf debug clean                       # kill debug port processes
 mf update                            # update mf to the latest version
 
 mf rule                              # print an AI-agent usage guide (e.g. > .cursor/rules/mf.md)
@@ -224,8 +212,7 @@ See [USAGE.md](USAGE.md#local-dns--https-macos) for a deeper walkthrough and tro
 | `services`     | List of services, each with `name`, `type`, and optional `hostname`, `db_name`, `db_user`, `path`, `package_manager` |
 | `dns`          | Local DNS + HTTPS: `enabled`, `tld`, `address` (macOS only)                                              |
 | `e2e`          | Path, framework, browser for e2e commands                                                                |
-| `scripts`      | Paths to project scripts (format, lint, pre-commit)                                                      |
-| `test`         | Test runner, env vars, debug port                                                                        |
+| `scripts`      | Paths to pre-commit scripts (`pre_commit`, `pre_commit_local`)                                           |
 
 
 ## Releasing (maintainers)

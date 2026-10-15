@@ -65,12 +65,6 @@ func completeSingleServiceName(cmd *cobra.Command, args []string, toComplete str
 	return completeServiceNames(cmd, args, toComplete)
 }
 
-// completeTestFiles returns Python test file paths for `mf test -f` completion.
-func completeTestFiles(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	// Let the shell do file completion, filtered to Python files
-	return []string{"py"}, cobra.ShellCompDirectiveFilterFileExt
-}
-
 // completeE2EFiles returns test file paths for `mf e2e run -f` completion.
 func completeE2EFiles(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	// Let the shell do file completion, filtered to common test file extensions

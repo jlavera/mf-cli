@@ -47,7 +47,7 @@ func TestClassifyServices(t *testing.T) {
 		dbName       string
 		dbUser       string
 	}{
-		{"db", "postgres", "topline", "postgres"},
+		{"db", "postgres", "myapp", "postgres"},
 		{"redis", "redis", "", ""},
 		{"celery_worker", "celery_worker", "", ""},
 		{"celery_flower", "flower", "", ""},

@@ -82,20 +82,12 @@ e2e:
   browser: chromium
 ```
 
-You can add script paths, test settings, or adjust any detected values:
+You can add script paths or adjust any detected values:
 
 ```yaml
 scripts:
     pre_commit: ./scripts/pre-commit-docker.sh
-    format: ./scripts/docker-black.sh
-    lint: ./scripts/docker-pylint.sh
-    ruff: ./scripts/docker-ruff.sh
-
-test:
-    runner: pytest
-    env:
-        ENV: test
-    debug_port: 5679
+    pre_commit_local: ./scripts/pre-commit-local-docker.sh
 ```
 
 ---
@@ -346,33 +338,6 @@ mf proxy uninstall         # untrust the CA + remove the daemon (sudo)
 
 ---
 
-## Running Tests
-
-```bash
-# Run all tests
-mf test
-
-# Run tests for specific apps/modules
-mf test users payments
-
-# Run a specific test file
-mf test -f users/tests/test_models.py
-
-# Run a specific test method
-mf test -m "TestUserModel.test_create_user"
-
-# Combine file + method
-mf test -m "TestUserModel.test_create_user" -f users/tests/test_models.py
-
-# Debug mode — starts debugpy and waits for VS Code/Cursor to attach
-mf test --debug
-mf test --debug -f users/tests/test_models.py
-```
-
-The test command uses the configured `test.runner` (default: `pytest`) and passes `test.env` variables (default: `ENV=test`).
-
----
-
 ## Celery Workers
 
 ```bash
@@ -429,38 +394,14 @@ mf e2e report             # Open the HTML report
 
 ---
 
-## Code Quality
+## Pre-commit Hooks
+
+Tests, formatting, and linting are service-scoped — run them through each service's own scripts with `mf run <service> <script>` (e.g. `mf run api test`).
 
 ```bash
-# Format code
-mf format                 # Run formatter (uses scripts.format or ruff)
-mf format --check         # Check only, don't modify files
-
-# Lint
-mf lint                   # Run linter (uses scripts.lint, scripts.ruff, or ruff in container)
-
-# Import sorting
-mf sort-imports           # Sort Python imports with ruff
-
-# All at once
-mf format-all             # Runs format + lint + sort-imports
-
-# Pre-commit hooks
-mf pre-commit             # Run pre-commit
+mf pre-commit             # Run scripts.pre_commit
 mf pre-commit --all       # Run on all files
-mf pre-commit --local     # Run local Docker-based pre-commit
-```
-
----
-
-## Debug Utilities
-
-```bash
-# Check if debug ports are in use
-mf debug check
-
-# Kill processes on debug ports
-mf debug clean
+mf pre-commit --local     # Run scripts.pre_commit_local
 ```
 
 ---
@@ -504,13 +445,13 @@ After sourcing, you get tab completion for all commands and flags:
 
 ```
 $ mf <TAB>
-build    celery   clean    completion  debug   down   e2e ...
+build    celery   clean    completion  down   e2e ...
 
 $ mf celery <TAB>
 logs   restart   start   stop
 
-$ mf test --<TAB>
---debug   --file   --method
+$ mf run frontend <TAB>
+build   dev   install   lint   test
 ```
 
 ---

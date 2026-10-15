@@ -18,7 +18,6 @@ type Config struct {
 	DNS         DNSConfig     `yaml:"dns,omitempty"`
 	E2E         E2EConfig     `yaml:"e2e,omitempty"`
 	Scripts     ScriptsConfig `yaml:"scripts,omitempty"`
-	Test        TestConfig    `yaml:"test,omitempty"`
 }
 
 // Service represents a single service detected from docker-compose.
@@ -168,16 +167,6 @@ type E2EConfig struct {
 type ScriptsConfig struct {
 	PreCommit      string `yaml:"pre_commit,omitempty"`
 	PreCommitLocal string `yaml:"pre_commit_local,omitempty"`
-	Format         string `yaml:"format,omitempty"`
-	Lint           string `yaml:"lint,omitempty"`
-	Ruff           string `yaml:"ruff,omitempty"`
-}
-
-// TestConfig holds test runner settings.
-type TestConfig struct {
-	Runner    string            `yaml:"runner,omitempty"`
-	Env       map[string]string `yaml:"env,omitempty"`
-	DebugPort int               `yaml:"debug_port,omitempty"`
 }
 
 // DefaultConfigFile is the default config file name.
@@ -214,13 +203,7 @@ const header = `# mf - docker-compose project manager
 #   mf shell [service]        Open bash/sh shell in a container (default: backend)
 #   mf psql [service]         Open database shell (postgres/mysql/mongo)
 #   mf redis-cli [service]    Open redis-cli in a Redis container
-#   mf test [apps...]         Run backend tests (-f file, -m marker, --debug)
-#   mf format [--check]       Format backend code
-#   mf lint                   Lint backend code
-#   mf sort-imports           Sort imports (ruff)
-#   mf format-all             format + lint + sort-imports
 #   mf pre-commit [--all] [--local]   Run pre-commit hooks
-#   mf debug check|clean      Inspect/kill debug port (default 5679)
 #   mf update                    Update mf to the latest version
 #   mf init [-f file] [-e env-file] [--force]   (Re)generate this file from a compose file
 #   mf dns install|uninstall|start|stop|status   Local DNS for .mf domains
@@ -260,20 +243,10 @@ func applyDefaults(cfg *Config) {
 	if cfg.EnvFile == "" {
 		cfg.EnvFile = ".env"
 	}
-	// If no backend exists, add a default "web" python entry.
-	if cfg.Backend() == "" {
-		cfg.Services = append(cfg.Services, Service{Name: "web", Type: "python"})
-	}
 	for i := range cfg.Services {
 		if cfg.Services[i].Path != "" && cfg.Services[i].PackageManager == "" {
 			cfg.Services[i].PackageManager = "npm"
 		}
-	}
-	if cfg.Test.Runner == "" {
-		cfg.Test.Runner = "pytest"
-	}
-	if cfg.Test.DebugPort == 0 {
-		cfg.Test.DebugPort = 5679
 	}
 	if cfg.DNS.Enabled {
 		if cfg.DNS.TLD == "" {
