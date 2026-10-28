@@ -315,7 +315,7 @@ func TestRebuildCleanFlagHelp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mf rebuild --help failed: %v", err)
 	}
-	for _, s := range []string{"--clean", "-c", "volumes"} {
+	for _, s := range []string{"--clean", "-c", "volumes", "--cache"} {
 		if !strings.Contains(stdout, s) {
 			t.Errorf("rebuild --help missing %q, got:\n%s", s, stdout)
 		}

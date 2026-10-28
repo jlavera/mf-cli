@@ -156,6 +156,9 @@ mf rebuild web
 mf rebuild --clean
 mf rebuild -c
 
+# Rebuild using the build cache (faster; default is --no-cache)
+mf rebuild --cache web
+
 # Build without the nuclear option
 mf build web
 mf build --no-cache web

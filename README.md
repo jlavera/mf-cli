@@ -80,7 +80,7 @@ mf down                              # stop and remove
 mf logs [services...]                # follow logs
 mf restart [services...]             # restart (with args: docker-compose restart; no args: down + up)
 mf clean                             # remove containers + volumes
-mf rebuild [services...] [-c]        # down + build --no-cache + up (-c also removes volumes)
+mf rebuild [services...] [-c]        # down + build --no-cache + up (-c also removes volumes, --cache uses build cache)
 
 mf shell [service]                   # shell into container (default: first app-type service)
 mf psql [service]                    # database shell (postgres/mysql/mongo); omit service if only one DB
