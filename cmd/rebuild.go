@@ -6,7 +6,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var rebuildClean bool
+var (
+	rebuildClean bool
+	rebuildCache bool
+)
 
 var rebuildCmd = &cobra.Command{
 	Use:               "rebuild [services...]",
@@ -33,8 +36,12 @@ var rebuildCmd = &cobra.Command{
 				}
 			}
 		}
-		fmt.Println("Building (no cache)...")
-		if err := comp.Build(true, args...); err != nil {
+		if rebuildCache {
+			fmt.Println("Building (with cache)...")
+		} else {
+			fmt.Println("Building (no cache)...")
+		}
+		if err := comp.Build(!rebuildCache, args...); err != nil {
 			return err
 		}
 		fmt.Println("Starting containers...")
@@ -45,5 +52,6 @@ var rebuildCmd = &cobra.Command{
 func init() {
 	rebuildCmd.GroupID = "general"
 	rebuildCmd.Flags().BoolVarP(&rebuildClean, "clean", "c", false, "Remove volumes before rebuilding (full reset)")
+	rebuildCmd.Flags().BoolVar(&rebuildCache, "cache", false, "Use the build cache (default builds with --no-cache)")
 	rootCmd.AddCommand(rebuildCmd)
 }

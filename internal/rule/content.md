@@ -19,7 +19,7 @@ project operations. Configuration lives in `mf.yaml` at the repo root.
 | Stop (keep containers)     | `mf stop [services...]`                        |
 | Stop + remove containers   | `mf down`                                      |
 | Restart                    | `mf restart [services...]`                     |
-| Rebuild image(s)           | `mf rebuild [services...]` (`-c` wipes volumes)|
+| Rebuild image(s)           | `mf rebuild [services...]` (`-c` wipes volumes, `--cache` uses build cache)|
 | Build image(s)             | `mf build [services...] [--no-cache]`          |
 | Full reset (volumes too)   | `mf clean`                                     |
 | Follow logs                | `mf logs [services...]`                        |

@@ -197,7 +197,7 @@ const header = `# mf - docker-compose project manager
 #   mf down                   Stop and remove containers
 #   mf clean                  Stop and remove containers + volumes
 #   mf build [services...]    Build images (--no-cache)
-#   mf rebuild [services...]  Build --no-cache then up
+#   mf rebuild [services...]  Build --no-cache then up (--cache to use build cache)
 #   mf bounce [services...]   Restart (with args: docker-compose restart; no args: down + up)
 #   mf logs [services...]     Follow container logs
 #   mf shell [service]        Open bash/sh shell in a container (default: backend)
