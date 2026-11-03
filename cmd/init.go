@@ -385,7 +385,9 @@ func installBashCompletions() {
 
 	dest := filepath.Join(compDir, "mf")
 	var buf bytes.Buffer
-	if err := rootCmd.GenBashCompletion(&buf); err != nil {
+	// V2 is required for tasks containing ':' (spring-boot:run, test:watch);
+	// the legacy V1 script mis-completes them.
+	if err := rootCmd.GenBashCompletionV2(&buf, true); err != nil {
 		return
 	}
 	if err := os.WriteFile(dest, buf.Bytes(), 0644); err != nil {
