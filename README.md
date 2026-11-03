@@ -209,7 +209,7 @@ See [USAGE.md](USAGE.md#local-dns--https-macos) for a deeper walkthrough and tro
 | `project`      | Project name                                                                                             |
 | `compose_file` | Path to docker-compose file                                                                              |
 | `profiles`     | docker-compose profiles to always enable (merged with the global `--profile` flag)                       |
-| `services`     | List of services, each with `name`, `type`, and optional `hostname`, `db_name`, `db_user`, `path`, `package_manager` |
+| `services`     | List of services, each with `name`, `type`, and optional `hostname`, `proxy_port`, `db_name`, `db_user`, `path`, `package_manager` |
 | `dns`          | Local DNS + HTTPS: `enabled`, `tld`, `address` (macOS only)                                              |
 | `e2e`          | Path, framework, browser for e2e commands                                                                |
 | `scripts`      | Paths to pre-commit scripts (`pre_commit`, `pre_commit_local`)                                           |

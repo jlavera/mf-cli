@@ -25,6 +25,7 @@ type Service struct {
 	Name           string `yaml:"name"`
 	Type           string `yaml:"type"`                      // python, nodejs, postgres, mysql, mongo, redis, celery_worker, celery_beat, flower, proxy, mail, storage, …
 	Hostname       string `yaml:"hostname,omitempty"`         // DNS hostname override; "false" to opt out
+	ProxyPort      int    `yaml:"proxy_port,omitempty"`       // host port the proxy routes to (default: first published port)
 	DBName         string `yaml:"db_name,omitempty"`
 	DBUser         string `yaml:"db_user,omitempty"`
 	Path           string `yaml:"path,omitempty"`             // local project directory (e.g. ./frontend)

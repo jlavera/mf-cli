@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jlavera/mf-cli/internal/compose"
@@ -57,9 +58,13 @@ func resolveRoutes() (string, []proxy.Route, error) {
 		if len(svcPorts) == 0 {
 			continue
 		}
+		port := compose.HostPort(svcPorts[0], env)
+		if svc := cfg.FindService(svcName); svc != nil && svc.ProxyPort != 0 {
+			port = strconv.Itoa(svc.ProxyPort)
+		}
 		routes = append(routes, proxy.Route{
 			Hostname: hostname,
-			Target:   "http://localhost:" + compose.HostPort(svcPorts[0], env),
+			Target:   "http://localhost:" + port,
 		})
 	}
 

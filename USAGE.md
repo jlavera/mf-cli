@@ -302,6 +302,17 @@ services:
 
 Services without a published port are skipped automatically — there's nothing to proxy to.
 
+The proxy routes to the service's first published port. When a service publishes several (e.g. Temporal's gRPC on 7233 and its web UI on 8233), pick the HTTP one with `proxy_port` (a host port):
+
+```yaml
+services:
+  - name: temporal_server
+    type: temporal
+    proxy_port: 8233                     # route to the UI, not gRPC
+```
+
+The proxy only speaks HTTP to backends, so non-HTTP ports (gRPC, Postgres, Redis, …) can't be reached through it.
+
 ### Multiple projects & TLD conflicts
 
 The DNS resolver file (`/etc/resolver/<tld>`) is the single source of truth and is shared by all projects. If a second project tries to `mf dns install` a `tld` that's already mapped to a different address, `mf` refuses with a clear error instead of silently clobbering it. Projects that share the same `tld`/`address` just work together.

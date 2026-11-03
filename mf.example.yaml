@@ -24,6 +24,7 @@ services:
     type: python
     # hostname: web.my-project.mf   # (optional) override the auto-derived DNS hostname
                                      #            set to false to opt this service out
+    # proxy_port: 8000                # (optional) host port to proxy to (default: first published port)
   - name: db
     type: postgres
     db_name: mydb
