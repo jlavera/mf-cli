@@ -3,6 +3,8 @@ package compose
 import (
 	"os"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestParseComposeFile(t *testing.T) {
@@ -316,5 +318,52 @@ func TestFindComposeFile(t *testing.T) {
 	}
 	if path != dir+"/docker-compose.yml" {
 		t.Errorf("expected docker-compose.yml, got %q", path)
+	}
+}
+
+func TestExtractPortSpecs(t *testing.T) {
+	src := `
+- "8000:8000"
+- "127.0.0.1:5432:5432/tcp"
+- 9000
+- "${WEB_PORT:-3000}:3000"
+- name: ui
+  target: 8233
+  published: "8233"
+- name: grpc
+  target: 7233
+  published: 7233
+  app_protocol: grpc
+- target: 9999
+`
+	var ports interface{}
+	if err := yaml.Unmarshal([]byte(src), &ports); err != nil {
+		t.Fatal(err)
+	}
+
+	got := ExtractPortSpecs(ports)
+	want := []struct {
+		name, published, target, proto string
+		http                           bool
+	}{
+		{"", "8000", "8000", "", true},
+		{"", "5432", "5432", "", true},
+		{"", "9000", "9000", "", true},
+		{"", "3000", "3000", "", true},
+		{"ui", "8233", "8233", "", true},
+		{"grpc", "7233", "7233", "grpc", false},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d specs, want %d (target-only entry should be skipped): %+v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		g := got[i]
+		if g.Name != w.name || g.Published != w.published || g.Target != w.target || g.AppProtocol != w.proto || g.IsHTTP() != w.http {
+			t.Errorf("spec %d = %+v (http=%v), want %+v", i, g, g.IsHTTP(), w)
+		}
+	}
+
+	if hp := got[3].HostPort(map[string]string{"WEB_PORT": "3100"}); hp != "3100" {
+		t.Errorf("HostPort with env = %q, want 3100", hp)
 	}
 }
