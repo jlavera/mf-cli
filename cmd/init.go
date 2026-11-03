@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/jlavera/mf-cli/internal/compose"
 	"github.com/jlavera/mf-cli/internal/config"
+	"github.com/jlavera/mf-cli/internal/maven"
 	"github.com/jlavera/mf-cli/internal/nodejs"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -81,8 +83,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 	newCfg := buildConfig(projectName, filepath.Base(composePath), detected)
 	newCfg.EnvFile = initEnvFile
 
-	// 7. Detect frontend/e2e paths from filesystem
-	detectProjectPaths(cwd, &newCfg)
+	// 7. Detect local project/e2e paths from filesystem
+	ambiguous := map[string][]string{}
+	for _, ds := range detected {
+		if len(ds.Candidates) > 0 {
+			ambiguous[ds.Name] = ds.Candidates
+		}
+	}
+	detectProjectPaths(cwd, &newCfg, ambiguous)
 
 	// 8. Prompt for local DNS configuration
 	promptDNS(&newCfg)
@@ -93,7 +101,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// 10. Print summary
-	printSummary(composePath, detected, newCfg, outputPath)
+	printSummary(composePath, detected, ambiguous, outputPath)
 
 	// 11. Install shell completions
 	setupCompletions()
@@ -144,19 +152,58 @@ func buildConfig(projectName, composeFileName string, detected []DetectedService
 	return cfg
 }
 
-// detectProjectPaths scans the filesystem for Node.js and e2e directories.
-// For each nodejs service, it tries to locate a package.json in common
-// locations (./<name>, ./apps/<name>, ./packages/<name>) and fills in
-// path/package_manager. Also scans well-known top-level directories for
-// additional Node.js projects not yet in the service list.
-func detectProjectPaths(cwd string, cfg *config.Config) {
-	// First pass: for each existing nodejs service, try to find its package.json
+// projectManifestTypes returns the sorted service types whose project
+// manifest exists in dir (package.json → nodejs, pom.xml → java).
+func projectManifestTypes(dir string) []string {
+	var types []string
+	if maven.HasPomXML(dir) {
+		types = append(types, "java")
+	}
+	if nodejs.HasPackageJSON(dir) {
+		types = append(types, "nodejs")
+	}
+	return types
+}
+
+// hasManifestFor reports whether dir holds the project manifest for serviceType.
+func hasManifestFor(serviceType, dir string) bool {
+	for _, t := range projectManifestTypes(dir) {
+		if t == serviceType {
+			return true
+		}
+	}
+	return false
+}
+
+// detectPackageManager returns the package manager / build tool for a project dir.
+func detectPackageManager(serviceType, dir string) string {
+	if serviceType == "java" {
+		return maven.DetectBuildTool(dir)
+	}
+	return nodejs.DetectPackageManager(dir)
+}
+
+// detectProjectPaths scans the filesystem for local project and e2e directories.
+// For each nodejs/java service, it tries to locate its manifest (package.json /
+// pom.xml) in common locations (./<name>, ./apps/<name>, ./packages/<name>)
+// and fills in path/package_manager. Also scans well-known top-level
+// directories for additional projects not yet in the service list.
+//
+// ambiguous maps service name → candidate types for services whose type could
+// not be determined; those are never assigned a type here, and new ambiguous
+// directories are added to it.
+func detectProjectPaths(cwd string, cfg *config.Config, ambiguous map[string][]string) {
+	// First pass: for each existing nodejs/java service, find its manifest
 	for i := range cfg.Services {
 		svc := &cfg.Services[i]
-		if svc.Path != "" {
+		if !config.IsTaskType(svc.Type) {
 			continue
 		}
-		if svc.Type != "nodejs" {
+		if svc.Path != "" {
+			absPath := filepath.Join(cwd, svc.Path)
+			if svc.PackageManager == "" && hasManifestFor(svc.Type, absPath) {
+				svc.PackageManager = detectPackageManager(svc.Type, absPath)
+			}
 			continue
 		}
 		candidates := []string{
@@ -166,39 +213,49 @@ func detectProjectPaths(cwd string, cfg *config.Config) {
 		}
 		for _, dir := range candidates {
 			absPath := filepath.Join(cwd, dir)
-			if nodejs.HasPackageJSON(absPath) {
+			if hasManifestFor(svc.Type, absPath) {
 				svc.Path = "./" + dir
-				svc.PackageManager = nodejs.DetectPackageManager(absPath)
+				svc.PackageManager = detectPackageManager(svc.Type, absPath)
 				break
 			}
 		}
 	}
 
 	// Second pass: scan well-known top-level directories for projects not yet listed
-	nodeDirs := []string{"frontend", "client", "web", "app", "api", "server", "backend"}
-	for _, dir := range nodeDirs {
+	projectDirs := []string{"frontend", "client", "web", "app", "api", "server", "backend"}
+	for _, dir := range projectDirs {
 		absPath := filepath.Join(cwd, dir)
-		if !nodejs.HasPackageJSON(absPath) {
+		types := projectManifestTypes(absPath)
+		if len(types) == 0 {
 			continue
 		}
-		pm := nodejs.DetectPackageManager(absPath)
-		if svc := cfg.FindService(dir); svc != nil {
-			if svc.Path == "" {
-				svc.Path = "./" + dir
+
+		svc := cfg.FindService(dir)
+		if svc == nil {
+			cfg.Services = append(cfg.Services, config.Service{Name: dir})
+			svc = &cfg.Services[len(cfg.Services)-1]
+		}
+		if svc.Type == "" {
+			if _, isAmbiguous := ambiguous[dir]; isAmbiguous {
+				continue
 			}
-			if svc.PackageManager == "" {
-				svc.PackageManager = pm
+			if len(types) > 1 {
+				if svc.Path == "" {
+					svc.Path = "./" + dir
+				}
+				ambiguous[dir] = types
+				continue
 			}
-			if svc.Type == "" {
-				svc.Type = "nodejs"
-			}
-		} else {
-			cfg.Services = append(cfg.Services, config.Service{
-				Name:           dir,
-				Type:           "nodejs",
-				Path:           "./" + dir,
-				PackageManager: pm,
-			})
+			svc.Type = types[0]
+		}
+		if !hasManifestFor(svc.Type, absPath) {
+			continue
+		}
+		if svc.Path == "" {
+			svc.Path = "./" + dir
+		}
+		if svc.PackageManager == "" {
+			svc.PackageManager = detectPackageManager(svc.Type, absPath)
 		}
 	}
 
@@ -427,7 +484,7 @@ func fileContains(path, substr string) bool {
 }
 
 // printSummary outputs what was detected.
-func printSummary(composePath string, detected []DetectedService, newCfg config.Config, outputPath string) {
+func printSummary(composePath string, detected []DetectedService, ambiguous map[string][]string, outputPath string) {
 	fmt.Printf("\n✅ Scanned %s — found %d services\n\n", filepath.Base(composePath), len(detected))
 
 	maxName := 0
@@ -454,13 +511,28 @@ func printSummary(composePath string, detected []DetectedService, newCfg config.
 		}
 
 		svcType := ds.ServiceType
-		if svcType == "" {
+		if candidates, ok := ambiguous[ds.Name]; ok && svcType == "" {
+			svcType = fmt.Sprintf("ambiguous (%s)", strings.Join(candidates, ", "))
+		} else if svcType == "" {
 			svcType = "unknown"
 		}
 		fmt.Printf("  %-*s → %s%s\n", maxName, ds.Name, svcType, extra)
 	}
 
 	fmt.Printf("\n✅ Generated %s\n", outputPath)
+
+	if len(ambiguous) > 0 {
+		names := make([]string, 0, len(ambiguous))
+		for name := range ambiguous {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		fmt.Println("\n⚠️  Could not determine the type of some services:")
+		for _, name := range names {
+			fmt.Printf("  %s (matches: %s)\n", name, strings.Join(ambiguous[name], ", "))
+		}
+		fmt.Printf("   Set \"type:\" manually for them in %s.\n", outputPath)
+	}
 }
 
 // DetectedService is re-exported for use in this package.
