@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -42,8 +43,9 @@ type DetectedService struct {
 	ServiceType string // python, nodejs, postgres, mysql, redis, celery_worker, flower, proxy, …
 	DBName      string
 	DBUser      string
-	BuildCtx    string // build context path if applicable
+	BuildCtx    string   // build context path if applicable
 	Ports       []string
+	Candidates  []string // set (with ServiceType empty) when several types matched
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +107,47 @@ var DefaultMatchers = []ImageMatcher{
 	{
 		Patterns:    []string{"memcached", "bitnami/memcached"},
 		ServiceType: "memcached",
+	},
+}
+
+// TechMatcher defines how to recognize an application technology. Every
+// matcher is evaluated against every signal; a service gets a type only when
+// exactly one technology matches.
+type TechMatcher struct {
+	ServiceType   string
+	Executables   []string // executable names in command/entrypoint (versions stripped)
+	ImageKeywords []string // tokens in the image name or Dockerfile FROM images
+	Manifests     []string // files at the root of the build context
+}
+
+// TechMatchers is the registry of technology detectors. Add new entries here.
+var TechMatchers = []TechMatcher{
+	{
+		ServiceType:   "python",
+		Executables:   []string{"python", "pip", "manage.py", "gunicorn", "uvicorn", "daphne", "hypercorn", "celery", "pytest", "poetry", "pipenv", "flask", "django-admin"},
+		ImageKeywords: []string{"python", "django", "flask"},
+	},
+	{
+		ServiceType:   "nodejs",
+		Executables:   []string{"node", "npm", "npx", "yarn", "pnpm", "bun", "deno", "next", "vite", "nuxt", "nest", "tsx", "ts-node", "nodemon", "pm2"},
+		ImageKeywords: []string{"node", "nodejs", "deno", "bun"},
+		Manifests:     []string{"package.json"},
+	},
+	{
+		ServiceType:   "ruby",
+		Executables:   []string{"ruby", "rails", "bundle", "rake", "puma", "rackup", "sidekiq"},
+		ImageKeywords: []string{"ruby", "rails"},
+	},
+	{
+		ServiceType:   "java",
+		Executables:   []string{"java", "mvn", "mvnw", "gradle", "gradlew"},
+		ImageKeywords: []string{"java", "maven", "openjdk", "jdk", "jre", "temurin", "corretto", "amazoncorretto", "zulu", "semeru", "sapmachine"},
+		Manifests:     []string{"pom.xml"},
+	},
+	{
+		ServiceType:   "go",
+		Executables:   []string{"go"},
+		ImageKeywords: []string{"golang"},
 	},
 }
 
@@ -212,57 +255,69 @@ func ClassifyServices(cf *ComposeFile, baseDir string) []DetectedService {
 			continue
 		}
 
-		// Step 4: Build services — detect tech from command, image, or Dockerfile
-		if ds.BuildCtx != "" {
-			ds.ServiceType = detectTechFromCommand(cmdStr)
-			if ds.ServiceType == "" {
-				ds.ServiceType = detectTechFromImage(imageName)
-			}
-			if ds.ServiceType == "" && baseDir != "" {
-				dfName := extractDockerfilePath(svc.Build)
-				dfPath := filepath.Join(baseDir, ds.BuildCtx, dfName)
-				ds.ServiceType = readDockerfileBaseImage(dfPath)
-			}
-			results = append(results, ds)
-			continue
+		// Step 4: Tech detection — every TechMatcher runs against the command,
+		// image, Dockerfile FROM lines and build-context manifests.
+		var dfPath, ctxDir string
+		if ds.BuildCtx != "" && baseDir != "" {
+			ctxDir = filepath.Join(baseDir, ds.BuildCtx)
+			dfPath = filepath.Join(ctxDir, extractDockerfilePath(svc.Build))
 		}
-
-		// Step 5: Image-only services that didn't match the registry
-		if imageName != "" {
-			ds.ServiceType = detectTechFromImage(imageName)
-			results = append(results, ds)
-			continue
-		}
-
-		// Step 6: Unknown
+		setTech(&ds, detectTech(cmdStr, imageName, dfPath, ctxDir))
 		results = append(results, ds)
 	}
 
 	return results
 }
 
-// matchImage tries to match the image against the DefaultMatchers registry.
+// setTech assigns the service type when exactly one candidate matched, and
+// records the candidates (leaving the type empty) when several did.
+func setTech(ds *DetectedService, candidates []string) {
+	switch len(candidates) {
+	case 0:
+	case 1:
+		ds.ServiceType = candidates[0]
+	default:
+		ds.Candidates = candidates
+	}
+}
+
+// matchImage runs every DefaultMatchers entry against the image. It returns
+// true when at least one matched; if matchers of different service types
+// match, the service is marked ambiguous instead of picking one.
 func matchImage(imageName string, envVars map[string]string, ds *DetectedService) bool {
+	var matched []ImageMatcher
+	types := map[string]bool{}
 	for _, m := range DefaultMatchers {
 		for _, pattern := range m.Patterns {
 			if imageMatchesPattern(imageName, pattern) {
-				ds.ServiceType = m.ServiceType
-
-				for envKey, field := range m.EnvMappings {
-					if val, ok := envVars[envKey]; ok {
-						switch field {
-						case "db_name":
-							ds.DBName = stripEnvInterpolation(val)
-						case "db_user":
-							ds.DBUser = stripEnvInterpolation(val)
-						}
-					}
-				}
-				return true
+				matched = append(matched, m)
+				types[m.ServiceType] = true
+				break
 			}
 		}
 	}
-	return false
+	if len(matched) == 0 {
+		return false
+	}
+	if len(types) > 1 {
+		setTech(ds, sortedKeys(types))
+		return true
+	}
+
+	ds.ServiceType = matched[0].ServiceType
+	for _, m := range matched {
+		for envKey, field := range m.EnvMappings {
+			if val, ok := envVars[envKey]; ok {
+				switch field {
+				case "db_name":
+					ds.DBName = stripEnvInterpolation(val)
+				case "db_user":
+					ds.DBUser = stripEnvInterpolation(val)
+				}
+			}
+		}
+	}
+	return true
 }
 
 // imageMatchesPattern checks if an image name matches a pattern.
@@ -287,62 +342,115 @@ func imageMatchesPattern(imageName, pattern string) bool {
 	return lastPart == pattern
 }
 
-// detectTechFromCommand infers the technology from a command/entrypoint string.
-func detectTechFromCommand(cmdStr string) string {
-	if cmdStr == "" {
-		return ""
+// detectTech runs every TechMatcher against all available signals and returns
+// the sorted, deduplicated set of matching technologies. Empty arguments are
+// skipped. More than one result means the service is ambiguous.
+func detectTech(cmdStr, imageName, dockerfilePath, ctxDir string) []string {
+	images := dockerfileBaseImages(dockerfilePath)
+	if imageName != "" {
+		images = append(images, imageName)
 	}
-	lower := strings.ToLower(cmdStr)
-	for _, kw := range []string{"python", "manage.py", "gunicorn", "uvicorn", "django", "flask", "celery", "pytest", "pip"} {
-		if strings.Contains(lower, kw) {
-			return "python"
+	executables := commandExecutables(cmdStr)
+
+	found := map[string]bool{}
+	for _, m := range TechMatchers {
+		if m.matchesCommand(executables) || m.matchesImages(images) || m.matchesManifests(ctxDir) {
+			found[m.ServiceType] = true
 		}
 	}
-	for _, kw := range []string{"node", "npm", "yarn", "pnpm", "next", "vite", "nuxt", "nest", "tsx", "ts-node"} {
-		if strings.Contains(lower, kw) {
-			return "nodejs"
-		}
-	}
-	for _, kw := range []string{"ruby", "rails", "bundle", "rake"} {
-		if strings.Contains(lower, kw) {
-			return "ruby"
-		}
-	}
-	for _, kw := range []string{"java", "gradle", "mvn", "spring"} {
-		if strings.Contains(lower, kw) {
-			return "java"
-		}
-	}
-	return ""
+	return sortedKeys(found)
 }
 
-// detectTechFromImage infers the technology from a Docker image name.
-func detectTechFromImage(imageName string) string {
-	if imageName == "" {
-		return ""
-	}
-	lower := strings.ToLower(imageName)
-	for _, kw := range []string{"python", "django", "flask"} {
-		if strings.Contains(lower, kw) {
-			return "python"
+func (m TechMatcher) matchesCommand(executables []string) bool {
+	for _, exe := range executables {
+		for _, kw := range m.Executables {
+			if exe == normalizeToken(kw) {
+				return true
+			}
 		}
 	}
-	for _, kw := range []string{"node", "deno", "bun"} {
-		if strings.Contains(lower, kw) {
-			return "nodejs"
+	return false
+}
+
+func (m TechMatcher) matchesImages(images []string) bool {
+	for _, img := range images {
+		for _, tok := range tokenize(img) {
+			for _, kw := range m.ImageKeywords {
+				if tok == kw {
+					return true
+				}
+			}
 		}
 	}
-	for _, kw := range []string{"ruby", "rails"} {
-		if strings.Contains(lower, kw) {
-			return "ruby"
+	return false
+}
+
+func (m TechMatcher) matchesManifests(ctxDir string) bool {
+	if ctxDir == "" {
+		return false
+	}
+	for _, name := range m.Manifests {
+		if _, err := os.Stat(filepath.Join(ctxDir, name)); err == nil {
+			return true
 		}
 	}
-	for _, kw := range []string{"golang", "go:"} {
-		if strings.Contains(lower, kw) {
-			return "go"
+	return false
+}
+
+// commandWrappers are leading words that don't reveal the technology; the
+// executable after them is used instead (e.g. `sh -c "npm run dev"`).
+var commandWrappers = map[string]bool{
+	"sh": true, "bash": true, "-c": true, "exec": true, "env": true, "sudo": true,
+}
+
+// commandExecutables returns the normalized executable name of every
+// sub-command in cmdStr (split on &&, ||, ;, |). Only executables are
+// matched, so arguments like `npm run bundle` don't look like Ruby.
+func commandExecutables(cmdStr string) []string {
+	s := strings.NewReplacer(`"`, " ", `'`, " ", "&&", ";", "||", ";", "|", ";").Replace(cmdStr)
+	var exes []string
+	for _, segment := range strings.Split(s, ";") {
+		for _, field := range strings.Fields(segment) {
+			if commandWrappers[field] || strings.Contains(field, "=") {
+				continue
+			}
+			exes = append(exes, normalizeToken(filepath.Base(strings.ToLower(field))))
+			break
 		}
 	}
-	return ""
+	return exes
+}
+
+// tokenize lowercases s, splits it on non-alphanumeric characters and
+// normalizes each token (e.g. "maven:3.9-eclipse-temurin-21" → maven, eclipse, temurin).
+func tokenize(s string) []string {
+	fields := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+	var tokens []string
+	for _, f := range fields {
+		if t := normalizeToken(f); t != "" {
+			tokens = append(tokens, t)
+		}
+	}
+	return tokens
+}
+
+// normalizeToken strips trailing version digits and dots ("python3.12" → "python").
+func normalizeToken(s string) string {
+	return strings.TrimRight(s, "0123456789.")
+}
+
+func sortedKeys(m map[string]bool) []string {
+	if len(m) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // matchCommand detects service roles from command/entrypoint strings.
@@ -409,38 +517,41 @@ func extractDockerfilePath(build interface{}) string {
 	return "Dockerfile"
 }
 
-// readDockerfileBaseImage reads a Dockerfile and returns the base image from
-// the first FROM instruction that matches a known technology. For multi-stage
-// builds (e.g. FROM node:20 AS builder / FROM nginx:alpine) the first
-// technology-matching stage wins, which is typically the one that reveals the
-// project's language.
-func readDockerfileBaseImage(path string) string {
+// dockerfileBaseImages returns the base image of every FROM instruction in
+// the Dockerfile at path (all stages of a multi-stage build). Returns nil if
+// path is empty or unreadable.
+func dockerfileBaseImages(path string) []string {
+	if path == "" {
+		return nil
+	}
 	f, err := os.Open(path)
 	if err != nil {
-		return ""
+		return nil
 	}
 	defer f.Close()
 
+	var images []string
+	stages := map[string]bool{}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		parts := strings.Fields(scanner.Text())
+		if len(parts) < 2 || !strings.EqualFold(parts[0], "FROM") {
 			continue
 		}
-		upper := strings.ToUpper(line)
-		if !strings.HasPrefix(upper, "FROM ") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-		image := parts[1]
-		if tech := detectTechFromImage(image); tech != "" {
-			return tech
+		for i, p := range parts[1:] {
+			if strings.HasPrefix(p, "--") {
+				continue
+			}
+			if !stages[strings.ToLower(p)] {
+				images = append(images, p)
+			}
+			if rest := parts[i+2:]; len(rest) >= 2 && strings.EqualFold(rest[0], "AS") {
+				stages[strings.ToLower(rest[1])] = true
+			}
+			break
 		}
 	}
-	return ""
+	return images
 }
 
 // extractEnvMap converts the environment field to a map.
