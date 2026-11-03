@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -231,5 +232,48 @@ services:
 	}
 	if projs[0].PackageManager != "npm" {
 		t.Errorf("expected default package_manager 'npm', got %q", projs[0].PackageManager)
+	}
+}
+
+func TestJavaDefaultsAndTaskProjects(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mf.yaml")
+	content := `project: test
+services:
+  - name: web
+    type: python
+  - name: frontend
+    type: nodejs
+    path: ./frontend
+  - name: api
+    type: java
+    path: ./api
+  - name: billing
+    type: java
+    path: ./billing
+    package_manager: ./mvnw
+`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if got := cfg.FindService("api").PackageManager; got != "mvn" {
+		t.Errorf("api: expected default package_manager 'mvn', got %q", got)
+	}
+	if got := cfg.FindService("billing").PackageManager; got != "./mvnw" {
+		t.Errorf("billing: expected explicit package_manager './mvnw' kept, got %q", got)
+	}
+
+	var names []string
+	for _, p := range cfg.TaskProjects() {
+		names = append(names, p.Name)
+	}
+	if strings.Join(names, ",") != "frontend,api,billing" {
+		t.Errorf("TaskProjects: got %v, want [frontend api billing]", names)
 	}
 }

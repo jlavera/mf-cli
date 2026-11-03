@@ -43,7 +43,7 @@ type DetectedService struct {
 	ServiceType string // python, nodejs, postgres, mysql, redis, celery_worker, flower, proxy, …
 	DBName      string
 	DBUser      string
-	BuildCtx    string   // build context path if applicable
+	BuildCtx    string // build context path if applicable
 	Ports       []string
 	Candidates  []string // set (with ServiceType empty) when several types matched
 }
