@@ -26,6 +26,8 @@ func TestInitFixtures(t *testing.T) {
 		"react-project",
 		"full-stack",
 		"monorepo",
+		"java-maven-project",
+		"ambiguous-project",
 	}
 
 	for _, fixture := range fixtures {

@@ -225,6 +225,45 @@ func TestCompletionFixtures(t *testing.T) {
 				},
 			},
 		},
+		{
+			fixture: "java-maven-project",
+			checks: []completionCheck{
+				{
+					desc:    "run lists java projects",
+					args:    []string{"run", ""},
+					include: []string{"api"},
+					exclude: []string{"db"},
+				},
+				{
+					desc:    "run api lists maven phases and plugin goals",
+					args:    []string{"run", "api", ""},
+					include: []string{"clean", "test", "package", "install", "spring-boot:run", "flyway:migrate"},
+					exclude: []string{"quarkus:dev"},
+				},
+				{
+					desc:    "run api filters by prefix",
+					args:    []string{"run", "api", "spring"},
+					include: []string{"spring-boot:run"},
+					exclude: []string{"clean", "flyway:migrate"},
+				},
+				{
+					desc:    "run api chains further tasks",
+					args:    []string{"run", "api", "clean", ""},
+					include: []string{"install", "spring-boot:run"},
+					exclude: []string{"clean"},
+				},
+			},
+		},
+		{
+			fixture: "ambiguous-project",
+			checks: []completionCheck{
+				{
+					desc:    "run excludes services without a type",
+					args:    []string{"run", ""},
+					exclude: []string{"app", "server", "db"},
+				},
+			},
+		},
 	}
 
 	for _, fx := range fixtures {

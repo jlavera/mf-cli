@@ -26,10 +26,19 @@ Examples:
   mf run frontend build -- --mode production
   mf run backend spring-boot:run
   mf run backend clean install -DskipTests`,
-	GroupID:           "stack",
-	Args:              cobra.MinimumNArgs(2),
-	ValidArgsFunction: completeRunArgs,
+	GroupID: "stack",
+	// Flag parsing is disabled so task flags like -DskipTests or --watch are
+	// forwarded instead of being rejected by Cobra.
+	DisableFlagParsing: true,
+	ValidArgsFunction:  completeRunArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if hasHelpFlag(args) {
+			return cmd.Help()
+		}
+		args = dropFirstDoubleDash(args)
+		if len(args) < 2 {
+			return fmt.Errorf("requires a service and a task: mf run <service> <task> [args...]")
+		}
 		svcName := args[0]
 		task := args[1]
 		rest := args[2:]
@@ -56,6 +65,17 @@ Examples:
 			return fmt.Errorf("service %q has no runnable type (got %q); set type: nodejs or java in mf.yaml", svcName, svc.Type)
 		}
 	},
+}
+
+// dropFirstDoubleDash removes the first "--" separator, matching what Cobra
+// did before flag parsing was disabled (`mf run web build -- --mode prod`).
+func dropFirstDoubleDash(args []string) []string {
+	for i, a := range args {
+		if a == "--" {
+			return append(append([]string{}, args[:i]...), args[i+1:]...)
+		}
+	}
+	return args
 }
 
 func init() {

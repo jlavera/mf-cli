@@ -1,0 +1,11 @@
+project: testproject
+compose_file: docker-compose.yml
+services:
+  - name: app
+    type: ""
+    path: ./app
+  - name: db
+    type: postgres
+  - name: server
+    type: ""
+    path: ./server
