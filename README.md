@@ -185,6 +185,23 @@ services:
 
 Services without a published port are skipped automatically (there's nothing to proxy to).
 
+#### Multiple ports per service
+
+The service hostname routes to its first published HTTP port (override with `proxy_port` in `mf.yaml`). To expose more ports, name them with the compose long syntax. Each one becomes `<port-name>.<service-hostname>`:
+
+```yaml
+ports:
+  - name: ui            # → https://ui.temporal_server.my-project.mf
+    target: 8233
+    published: "8233"
+  - name: grpc          # app_protocol other than http/https → not routed
+    target: 7233
+    published: "7233"
+    app_protocol: grpc
+```
+
+`mf status` warns when a multi-port service has unnamed ports. See [USAGE.md](USAGE.md#named-ports) for details.
+
 ### Managing the daemons
 
 ```bash
