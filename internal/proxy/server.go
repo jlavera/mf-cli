@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -57,7 +58,7 @@ func (s *Server) Start() error {
 
 	go func() {
 		fmt.Printf("HTTP proxy listening on %s\n", s.HTTPAddr)
-		errCh <- http.ListenAndServe(s.HTTPAddr, handler)
+		errCh <- listenErr(s.HTTPAddr, http.ListenAndServe(s.HTTPAddr, handler))
 	}()
 
 	if s.CA != nil {
@@ -68,11 +69,20 @@ func (s *Server) Start() error {
 				TLSConfig: &tls.Config{GetCertificate: s.CA.GetCertificate},
 			}
 			fmt.Printf("HTTPS proxy listening on %s\n", s.HTTPSAddr)
-			errCh <- server.ListenAndServeTLS("", "")
+			errCh <- listenErr(s.HTTPSAddr, server.ListenAndServeTLS("", ""))
 		}()
 	}
 
 	return <-errCh
+}
+
+func listenErr(addr string, err error) error {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return fmt.Errorf("%s is already in use — either the mf proxy daemon is already running "+
+			"(check 'mf proxy status') or another process/container is bound to it "+
+			"(check 'sudo lsof -nP -iTCP%s -sTCP:LISTEN'): %w", addr, addr, err)
+	}
+	return err
 }
 
 // watchRoutes polls the routes directory and reloads on SIGHUP.

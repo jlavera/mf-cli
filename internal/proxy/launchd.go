@@ -2,10 +2,13 @@ package proxy
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const launchdLabel = "com.mf-cli.proxy"
@@ -13,6 +16,9 @@ const launchdLabel = "com.mf-cli.proxy"
 // launchDaemonsDir is where system-wide LaunchDaemons live. The proxy runs as a
 // root LaunchDaemon so it can bind ports 80/443 directly (no pfctl redirect).
 const launchDaemonsDir = "/Library/LaunchDaemons"
+
+// LogPath is where launchd sends the daemon's stdout/stderr.
+const LogPath = "/tmp/mf-proxy.log"
 
 // PlistPath returns the path to the launchd plist for the proxy daemon.
 func PlistPath() string {
@@ -46,12 +52,12 @@ func InstallLaunchd(mfBinary string, httpPort, httpsPort int) error {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/mf-proxy.log</string>
+    <string>%s</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/mf-proxy.log</string>
+    <string>%s</string>
 </dict>
 </plist>
-`, launchdLabel, mfBinary, httpPort, httpsPort)
+`, launchdLabel, mfBinary, httpPort, httpsPort, LogPath, LogPath)
 
 	if err := os.WriteFile(plistPath, []byte(plist), 0644); err != nil {
 		return fmt.Errorf("could not write plist %s (try running with sudo): %w", plistPath, err)
@@ -59,8 +65,11 @@ func InstallLaunchd(mfBinary string, httpPort, httpsPort int) error {
 	return nil
 }
 
-// LoadLaunchd loads (starts) the launchd job. Requires root.
+// LoadLaunchd (re)loads the launchd job. Requires root. Any previously loaded
+// instance is unloaded first: `launchctl load` on an already-loaded job is a
+// no-op, so a reinstall would otherwise keep running the old binary/flags.
 func LoadLaunchd() error {
+	_ = UnloadLaunchd()
 	out, err := exec.Command("launchctl", "load", PlistPath()).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("launchctl load failed: %s: %w", strings.TrimSpace(string(out)), err)
@@ -94,5 +103,46 @@ func RemoveLaunchd() error {
 // (works without root) because a root LaunchDaemon won't appear in a non-root
 // user's `launchctl list`.
 func IsRunning() bool {
-	return exec.Command("pgrep", "-f", "mf proxy start").Run() == nil
+	out, err := exec.Command("pgrep", "-f", "mf proxy start").Output()
+	if err != nil {
+		return false
+	}
+	self := strconv.Itoa(os.Getpid())
+	for _, pid := range strings.Fields(string(out)) {
+		if pid != self {
+			return true
+		}
+	}
+	return false
+}
+
+// WaitListening polls until something accepts TCP connections on
+// 127.0.0.1:port or the timeout elapses.
+func WaitListening(port int, timeout time.Duration) bool {
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	deadline := time.Now().Add(timeout)
+	for {
+		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+}
+
+// TailLog returns up to the last n lines of the daemon log.
+func TailLog(n int) string {
+	data, err := os.ReadFile(LogPath)
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }

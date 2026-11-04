@@ -59,8 +59,11 @@ func InstallLaunchd(mfBinary, listenAddr string, port int) error {
 	return nil
 }
 
-// LoadLaunchd loads (starts) the launchd job. Requires root.
+// LoadLaunchd (re)loads the launchd job. Requires root. Any previously loaded
+// instance is unloaded first: `launchctl load` on an already-loaded job is a
+// no-op, so a reinstall would otherwise keep running the old binary/flags.
 func LoadLaunchd() error {
+	_ = UnloadLaunchd()
 	out, err := exec.Command("launchctl", "load", PlistPath()).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("launchctl load failed: %s: %w", strings.TrimSpace(string(out)), err)

@@ -22,17 +22,10 @@ var statusCmd = &cobra.Command{
 			byService[cs.Service] = cs
 		}
 
-		// Resolve hostnames if DNS is enabled
-		var hostnames map[string]string
+		var routing map[string]serviceRouting
 		if cfg.DNS.Enabled {
-			cf, parseErr := compose.ParseComposeFile(cfg.ComposeFile)
-			if parseErr == nil {
-			projectName := dnsProjectName(cf)
-			ports := make(map[string][]string)
-				for name, svc := range cf.Services {
-					ports[name] = compose.ExtractPortsPublic(svc.Ports)
-				}
-				hostnames = cfg.ResolveHostnames(projectName, ports)
+			if _, r, err := serviceRoutes(); err == nil {
+				routing = r
 			}
 		}
 
@@ -71,8 +64,9 @@ var statusCmd = &cobra.Command{
 				svcType = "-"
 			}
 			line := fmt.Sprintf("  %s %-*s  %-*s  %-*s", icon, maxName, svc.Name, maxType, svcType, maxState, state)
-			if hostname, ok := hostnames[svc.Name]; ok {
-				line += fmt.Sprintf("  https://%s", hostname)
+			r, routed := routing[svc.Name]
+			if routed && r.Default != nil {
+				line += fmt.Sprintf("  https://%s", r.Hostname)
 				if ports != "" {
 					line += " → " + ports
 				}
@@ -80,6 +74,26 @@ var statusCmd = &cobra.Command{
 				line += "  " + ports
 			}
 			fmt.Println(line)
+
+			if routed {
+				indent := strings.Repeat(" ", 4+maxName+2+maxType+2+maxState+2)
+				for _, nr := range r.Named {
+					fmt.Printf("%shttps://%s → %s\n", indent, nr.Hostname, strings.TrimPrefix(nr.Target, "http://"))
+				}
+			}
+		}
+
+		var warnings []string
+		for _, svc := range cfg.Services {
+			if r, ok := routing[svc.Name]; ok && r.Warning != "" {
+				warnings = append(warnings, r.Warning)
+			}
+		}
+		if len(warnings) > 0 {
+			fmt.Println()
+			for _, w := range warnings {
+				fmt.Printf("⚠️  %s\n", w)
+			}
 		}
 
 		return nil

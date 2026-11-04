@@ -506,6 +506,82 @@ func extractPorts(ports interface{}) []string {
 	return result
 }
 
+// PortSpec is a published port from a compose service's ports list. Name and
+// AppProtocol are only available with the long syntax.
+type PortSpec struct {
+	Name        string
+	Published   string // raw host port; may contain ${VAR} interpolation
+	Target      string
+	AppProtocol string
+
+	mapping string // raw short-syntax mapping, resolved lazily by HostPort
+}
+
+// HostPort returns the host-side port, expanding ${VAR:-default} with env.
+func (p PortSpec) HostPort(env map[string]string) string {
+	if p.mapping != "" {
+		return HostPort(p.mapping, env)
+	}
+	return ExpandEnv(p.Published, env)
+}
+
+// IsHTTP reports whether the port can be reverse-proxied over HTTP. Ports with
+// no app_protocol are assumed to be HTTP.
+func (p PortSpec) IsHTTP() bool {
+	switch strings.ToLower(p.AppProtocol) {
+	case "", "http", "https":
+		return true
+	}
+	return false
+}
+
+// ExtractPortSpecs parses a service's ports field (short and long syntax).
+// Long-syntax entries without a published port are skipped since they aren't
+// reachable on a fixed host port.
+func ExtractPortSpecs(ports interface{}) []PortSpec {
+	items, ok := ports.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	var result []PortSpec
+	for _, item := range items {
+		switch p := item.(type) {
+		case string:
+			result = append(result, shortPortSpec(p))
+		case int:
+			result = append(result, shortPortSpec(fmt.Sprintf("%d", p)))
+		case map[string]interface{}:
+			published, ok := p["published"]
+			if !ok || published == nil {
+				continue
+			}
+			spec := PortSpec{Published: fmt.Sprintf("%v", published)}
+			if v, ok := p["target"]; ok && v != nil {
+				spec.Target = fmt.Sprintf("%v", v)
+			}
+			if v, ok := p["name"].(string); ok {
+				spec.Name = v
+			}
+			if v, ok := p["app_protocol"].(string); ok {
+				spec.AppProtocol = v
+			}
+			result = append(result, spec)
+		}
+	}
+	return result
+}
+
+func shortPortSpec(mapping string) PortSpec {
+	p := strings.SplitN(ExpandEnv(mapping, nil), "/", 2)[0]
+	parts := strings.Split(p, ":")
+	return PortSpec{
+		Published: HostPort(mapping, nil),
+		Target:    parts[len(parts)-1],
+		mapping:   mapping,
+	}
+}
+
 // stripEnvInterpolation extracts the default value from bash-style variable
 // interpolation. Examples:
 //   - "${DB_NAME:-mydb}"  → "mydb"

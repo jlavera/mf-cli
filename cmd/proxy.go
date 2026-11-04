@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
+	"time"
 
 	"github.com/jlavera/mf-cli/internal/proxy"
 	"github.com/spf13/cobra"
@@ -42,15 +44,17 @@ var proxyInstallCmd = &cobra.Command{
 			if _, err := proxy.GenerateCA(); err != nil {
 				return fmt.Errorf("failed to generate CA (try: sudo mf proxy install): %w", err)
 			}
+		}
 
-			fmt.Println("🔐 Trusting CA in macOS keychain...")
-			trustCmd := exec.Command("security", "add-trusted-cert", "-d", "-r", "trustRoot",
-				"-k", "/Library/Keychains/System.keychain", proxy.RootCertPath())
-			trustCmd.Stdout = os.Stdout
-			trustCmd.Stderr = os.Stderr
-			if err := trustCmd.Run(); err != nil {
-				return fmt.Errorf("failed to trust CA (try: sudo mf proxy install): %w", err)
-			}
+		// Always (re)trust: a previous install may have generated the CA but
+		// failed or been interrupted before trusting it. Re-adding is harmless.
+		fmt.Println("🔐 Trusting CA in macOS keychain...")
+		trustCmd := exec.Command("security", "add-trusted-cert", "-d", "-r", "trustRoot",
+			"-k", "/Library/Keychains/System.keychain", proxy.RootCertPath())
+		trustCmd.Stdout = os.Stdout
+		trustCmd.Stderr = os.Stderr
+		if err := trustCmd.Run(); err != nil {
+			return fmt.Errorf("failed to trust CA (try: sudo mf proxy install): %w", err)
 		}
 
 		fmt.Println("📁 Preparing routes directory...")
@@ -69,6 +73,13 @@ var proxyInstallCmd = &cobra.Command{
 		}
 		if err := proxy.LoadLaunchd(); err != nil {
 			return fmt.Errorf("failed to load launchd job: %w", err)
+		}
+
+		fmt.Println("⏳ Waiting for proxy to start...")
+		if !proxy.WaitListening(proxyHTTPSPort, 5*time.Second) {
+			fmt.Printf("\n❌ Proxy daemon did not start listening on :%d\n", proxyHTTPSPort)
+			printProxyLog()
+			return fmt.Errorf("proxy daemon failed to start (full log: %s)", proxy.LogPath)
 		}
 
 		fmt.Printf("\n✅ Proxy installed — HTTPS reverse proxy active on :%d/:%d\n", proxyHTTPPort, proxyHTTPSPort)
@@ -114,9 +125,20 @@ var (
 
 var proxyStartCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Run the reverse proxy in the foreground",
+	Short: "Run the reverse proxy in the foreground (the installed daemon runs this for you)",
 	Annotations: map[string]string{"skipConfig": "true"},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if proxy.IsRunning() && os.Geteuid() != 0 {
+			fmt.Println("ℹ️  The proxy daemon is already running — no need to start it manually.")
+			fmt.Println("   Use 'mf proxy status' to inspect it, or 'mf proxy stop' first to run it in the foreground.")
+			return nil
+		}
+		if handled, err := elevate(fmt.Sprintf(
+			"Running the proxy needs administrator access to read the root-only CA key\n"+
+				"and bind ports %d/%d.", proxyHTTPPort, proxyHTTPSPort)); handled {
+			return err
+		}
+
 		ca, err := proxy.LoadCA()
 		if err != nil {
 			return err
@@ -156,6 +178,7 @@ var proxyStatusCmd = &cobra.Command{
 			fmt.Println("✅ Proxy daemon is running")
 		} else {
 			fmt.Println("❌ Proxy daemon is not running")
+			printProxyLog()
 		}
 
 		routes, err := proxy.LoadAllRoutes()
@@ -172,6 +195,17 @@ var proxyStatusCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func printProxyLog() {
+	tail := proxy.TailLog(15)
+	if tail == "" {
+		return
+	}
+	fmt.Printf("\nLast lines of %s:\n", proxy.LogPath)
+	for _, line := range strings.Split(tail, "\n") {
+		fmt.Printf("   %s\n", line)
+	}
 }
 
 func init() {

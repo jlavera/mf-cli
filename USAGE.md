@@ -302,6 +302,36 @@ services:
 
 Services without a published port are skipped automatically — there's nothing to proxy to.
 
+The service hostname routes to its first published HTTP port. The proxy only speaks HTTP to backends, so non-HTTP ports (gRPC, Postgres, Redis, …) can't be reached through it.
+
+### Named ports
+
+To reach several ports of one service, name them with the compose long port syntax. Each named port gets its own subdomain, `<port-name>.<service-hostname>`:
+
+```yaml
+# docker-compose.yml
+services:
+  temporal_server:
+    ports:
+      - name: ui
+        target: 8233
+        published: "8233"
+      - name: grpc
+        target: 7233
+        published: "7233"
+        app_protocol: grpc
+```
+
+```
+https://ui.temporal_server.topline.mf  → localhost:8233
+https://temporal_server.topline.mf     → localhost:8233   (first HTTP port)
+```
+
+- Ports whose `app_protocol` is anything other than `http`/`https` (e.g. `grpc`) get no route. Connect to them on `localhost:<port>` directly.
+- A `hostname:` override becomes the base, e.g. `ui.backoffice.my-project.mf`.
+- Use lowercase letters, digits and hyphens in port names, since they become part of the hostname.
+- `mf status` lists named routes under each service. It warns when a service publishes more than one port but some are unnamed, because only the default port is reachable then.
+
 ### Multiple projects & TLD conflicts
 
 The DNS resolver file (`/etc/resolver/<tld>`) is the single source of truth and is shared by all projects. If a second project tries to `mf dns install` a `tld` that's already mapped to a different address, `mf` refuses with a clear error instead of silently clobbering it. Projects that share the same `tld`/`address` just work together.

@@ -136,10 +136,16 @@ func GenerateCA() (*CA, error) {
 // LoadCA reads an existing root CA from disk.
 func LoadCA() (*CA, error) {
 	certPEM, err := os.ReadFile(RootCertPath())
+	if os.IsPermission(err) {
+		return nil, fmt.Errorf("CA is root-only — run as root (the installed daemon already does): %w", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("CA not found — run 'mf proxy install' first: %w", err)
 	}
 	keyPEM, err := os.ReadFile(rootKeyPath())
+	if os.IsPermission(err) {
+		return nil, fmt.Errorf("CA key is root-only — run as root (the installed daemon already does): %w", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("CA key not found: %w", err)
 	}
