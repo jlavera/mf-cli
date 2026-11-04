@@ -41,7 +41,7 @@ mf init
 mf up                  # start all services
 mf logs                # follow logs
 mf shell               # shell into backend container
-mf run frontend test   # run a service's package.json script
+mf run frontend test   # run a service's package.json script (or Maven goal for java)
 mf down                # stop everything
 ```
 
@@ -57,7 +57,9 @@ Detects:
 - **Proxies** — Nginx, Traefik, Caddy
 - **Search** — Elasticsearch, OpenSearch
 - **Storage** — MinIO, LocalStack
-- **Apps** — Python, Node.js, Ruby, Go, Java detection from commands and images
+- **Apps** — Python, Node.js, Ruby, Go, Java detection from commands, images, Dockerfiles and manifests (`package.json`, `pom.xml`)
+
+Every detector runs against every signal. If they disagree (e.g. a Node Dockerfile next to a `pom.xml`), the service's `type` is left empty and `mf init` warns you to set it manually in `mf.yaml`.
 
 It also asks whether to enable [local DNS & HTTPS](#local-dns--https-macos) (macOS), letting you reach services as `https://web.my-project.mf`.
 
@@ -114,9 +116,11 @@ profiles:
 mf celery start|stop|restart|logs    # manage Celery workers
 mf flower logs                       # follow Flower logs
 
-mf run <service> <script> [args...]  # run package.json script for services with path: set
-mf run frontend dev                  # npm run dev in ./frontend
-mf run api test                      # npm run test in ./api
+mf run <service> <task> [args...]    # nodejs: package.json script; java: Maven phase/goal
+mf run frontend dev                  # npm run dev in the frontend container
+mf run api test                      # npm run test in the api container
+mf run backend spring-boot:run       # mvn (or ./mvnw) spring-boot:run in the backend container
+mf run backend clean install -DskipTests
 
 mf e2e install                       # install deps + browsers
 mf e2e run [-f file] [--project name]  # run tests

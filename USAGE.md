@@ -384,22 +384,39 @@ mf flower logs        # Follow Flower dashboard logs
 
 ---
 
-## Running Package Scripts
+## Running Project Tasks
 
-For services with a `path:` set, use `mf run` to execute package.json scripts:
+`mf run <service> <task> [args...]` runs a task inside the service's container (via `docker-compose exec`). It works for `nodejs` and `java` services.
+
+### Node.js (package.json scripts)
 
 ```bash
 mf run frontend install   # npm install (or yarn/pnpm)
 mf run frontend dev       # npm run dev
 mf run frontend build     # npm run build
 mf run frontend lint      # npm run lint
-
-# Works with any service that has path: set
-mf run api test           # npm run test (in the api service dir)
-mf run api dev            # npm run dev (in the api service dir)
+mf run api test --watch   # npm run test --watch
 ```
 
-Tab completion lists available services, then available scripts from `package.json`.
+### Java (Maven)
+
+Tasks are Maven lifecycle phases and plugin goals. `mf` uses `./mvnw` when the project has a Maven wrapper, otherwise `mvn` (set with `package_manager:`).
+
+```bash
+mf run billing test                       # mvn test
+mf run billing clean install -DskipTests  # phases/goals can be chained; flags are forwarded
+mf run billing spring-boot:run            # plugin goal
+mf run billing flyway:migrate
+```
+
+Tab completion lists `nodejs`/`java` services, then the tasks for the chosen service:
+
+- **Node.js** — scripts from `package.json`, plus `install`
+- **Java** — lifecycle phases (`clean`, `validate`, `compile`, `test`, `package`, `verify`, `install`, `deploy`) plus goals of well-known plugins declared in `pom.xml` (Spring Boot, Quarkus, Jetty, Flyway, Liquibase, exec, Spotless, Checkstyle, Jib, Micronaut). After the first task, completion keeps offering the remaining ones.
+
+### Ambiguous project types
+
+`mf init` runs every detector (command, image, Dockerfile `FROM` lines, `package.json`/`pom.xml`). If more than one technology matches, it leaves `type` empty and prints a warning — set `type: nodejs` or `type: java` (etc.) in `mf.yaml` yourself.
 
 ---
 
@@ -485,6 +502,9 @@ logs   restart   start   stop
 
 $ mf run frontend <TAB>
 build   dev   install   lint   test
+
+$ mf run billing spring-boot:<TAB>
+build-image   run
 ```
 
 ---

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jlavera/mf-cli/internal/compose"
+	"github.com/jlavera/mf-cli/internal/maven"
 	"github.com/jlavera/mf-cli/internal/nodejs"
 	"github.com/spf13/cobra"
 )
@@ -82,49 +83,81 @@ func completeE2EProjects(cmd *cobra.Command, args []string, toComplete string) (
 }
 
 // completeRunArgs handles completion for `mf run`:
-// - position 0: nodejs service names
-// - position 1: package.json scripts for the chosen service + "install"
+// - position 0: nodejs and java service names
+// - position 1: package.json scripts + "install" (nodejs), or Maven phases
+//   and known plugin goals from pom.xml (java)
+// - position 2+: remaining Maven tasks (java only, since goals can be chained)
 func completeRunArgs(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	switch len(args) {
-	case 0:
-		if cfg == nil {
-			return []string{}, cobra.ShellCompDirectiveNoFileComp
-		}
+	if cfg == nil {
+		return []string{}, cobra.ShellCompDirectiveNoFileComp
+	}
+	if len(args) == 0 {
 		var names []string
-		for _, p := range cfg.NodeJSProjects() {
+		for _, p := range cfg.TaskProjects() {
 			if strings.HasPrefix(p.Name, toComplete) {
 				names = append(names, p.Name)
 			}
 		}
 		return names, cobra.ShellCompDirectiveNoFileComp
+	}
 
-	case 1:
-		if cfg == nil {
-			return []string{}, cobra.ShellCompDirectiveNoFileComp
-		}
-		svc := cfg.FindService(args[0])
-		if svc == nil {
-			return []string{}, cobra.ShellCompDirectiveNoFileComp
-		}
-		completions := []string{"install"}
-		if svc.Path != "" {
-			dir, err := resolveProjectDir(svc.Path)
-			if err == nil {
-				scripts, err := nodejs.ReadScripts(dir)
-				if err == nil {
-					for s := range scripts {
-						if strings.HasPrefix(s, toComplete) {
-							completions = append(completions, s)
-						}
-					}
-				}
-			}
-		}
-		return completions, cobra.ShellCompDirectiveNoFileComp
-
-	default:
+	svc := cfg.FindService(args[0])
+	if svc == nil {
 		return []string{}, cobra.ShellCompDirectiveNoFileComp
 	}
+
+	var tasks []string
+	switch {
+	case svc.Type == "java":
+		tasks = mavenTasks(svc.Path)
+	case len(args) == 1:
+		tasks = append([]string{"install"}, nodeScripts(svc.Path)...)
+	}
+
+	used := make(map[string]bool)
+	for _, a := range args[1:] {
+		used[a] = true
+	}
+	completions := []string{}
+	for _, t := range tasks {
+		if !used[t] && strings.HasPrefix(t, toComplete) {
+			completions = append(completions, t)
+		}
+	}
+	return completions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// nodeScripts returns the package.json script names for a project path, or nil.
+func nodeScripts(path string) []string {
+	if path == "" {
+		return nil
+	}
+	dir, err := resolveProjectDir(path)
+	if err != nil {
+		return nil
+	}
+	scripts, err := nodejs.ReadScripts(dir)
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(scripts))
+	for s := range scripts {
+		names = append(names, s)
+	}
+	return names
+}
+
+// mavenTasks returns the Maven tasks for a project path, falling back to the
+// lifecycle phases when pom.xml can't be read.
+func mavenTasks(path string) []string {
+	if path != "" {
+		if dir, err := resolveProjectDir(path); err == nil {
+			if tasks, err := maven.ReadTasks(dir); err == nil {
+				return tasks
+			}
+		}
+	}
+	return maven.LifecyclePhases
 }
 
 

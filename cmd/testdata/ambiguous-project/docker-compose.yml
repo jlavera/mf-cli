@@ -1,0 +1,9 @@
+# app: Dockerfile is node-based but the build context also has a pom.xml → ambiguous.
+# server: not in compose; ./server has both package.json and pom.xml → ambiguous.
+services:
+  app:
+    build: ./app
+    ports:
+      - "3000:3000"
+  db:
+    image: postgres:16

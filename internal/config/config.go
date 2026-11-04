@@ -23,12 +23,31 @@ type Config struct {
 // Service represents a single service detected from docker-compose.
 type Service struct {
 	Name           string `yaml:"name"`
-	Type           string `yaml:"type"`                      // python, nodejs, postgres, mysql, mongo, redis, celery_worker, celery_beat, flower, proxy, mail, storage, …
+	Type           string `yaml:"type"`                      // python, nodejs, java, postgres, mysql, mongo, redis, celery_worker, celery_beat, flower, proxy, mail, storage, …
 	Hostname       string `yaml:"hostname,omitempty"`         // DNS hostname override; "false" to opt out
 	DBName         string `yaml:"db_name,omitempty"`
 	DBUser         string `yaml:"db_user,omitempty"`
 	Path           string `yaml:"path,omitempty"`             // local project directory (e.g. ./frontend)
-	PackageManager string `yaml:"package_manager,omitempty"` // npm, yarn, pnpm
+	PackageManager string `yaml:"package_manager,omitempty"` // npm, yarn, pnpm (nodejs); mvn, ./mvnw (java)
+}
+
+// taskTypes are service types whose tasks can be run with `mf run`.
+var taskTypes = map[string]bool{
+	"nodejs": true, "java": true,
+}
+
+// IsTaskType reports whether services of type t support `mf run`.
+func IsTaskType(t string) bool {
+	return taskTypes[t]
+}
+
+// DefaultPackageManager returns the package manager / build tool used for a
+// service type when none is configured.
+func DefaultPackageManager(serviceType string) string {
+	if serviceType == "java" {
+		return "mvn"
+	}
+	return "npm"
 }
 
 // appTypes are technology types that represent application services.
@@ -98,6 +117,18 @@ func (c *Config) NodeJSProjects() []Service {
 	var projs []Service
 	for _, s := range c.Services {
 		if s.Type == "nodejs" {
+			projs = append(projs, s)
+		}
+	}
+	return projs
+}
+
+// TaskProjects returns all services whose tasks can be run with `mf run`
+// (nodejs package.json scripts, java Maven phases/goals).
+func (c *Config) TaskProjects() []Service {
+	var projs []Service
+	for _, s := range c.Services {
+		if taskTypes[s.Type] {
 			projs = append(projs, s)
 		}
 	}
@@ -212,7 +243,7 @@ const header = `# mf - docker-compose project manager
 # Stack Commands:
 #   mf celery start|stop|restart|logs   Manage Celery workers
 #   mf flower logs                      Follow Flower logs
-#   mf run <service> <script> [args...]   Run a package.json script (services with path: set)
+#   mf run <service> <task> [args...]     Run a package.json script (nodejs) or Maven phase/goal (java)
 #   mf e2e install|run|ui|headed|debug|report
 #
 # Global Flags:
@@ -245,7 +276,7 @@ func applyDefaults(cfg *Config) {
 	}
 	for i := range cfg.Services {
 		if cfg.Services[i].Path != "" && cfg.Services[i].PackageManager == "" {
-			cfg.Services[i].PackageManager = "npm"
+			cfg.Services[i].PackageManager = DefaultPackageManager(cfg.Services[i].Type)
 		}
 	}
 	if cfg.DNS.Enabled {

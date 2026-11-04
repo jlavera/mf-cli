@@ -648,3 +648,102 @@ func TestNodeJSMultipleProjects(t *testing.T) {
 		t.Error("mf.yaml missing nodejs entry 'api'")
 	}
 }
+
+func TestInitAmbiguousWarning(t *testing.T) {
+	dir := setupFixtureDir(t, "ambiguous-project", "testproject")
+
+	stdout, stderr, err := runMF(dir, "init", "--force")
+	if err != nil {
+		t.Fatalf("mf init failed: %v\nstderr: %s", err, stderr)
+	}
+	for _, want := range []string{
+		"ambiguous (java, nodejs)",
+		"Could not determine the type",
+		"app (matches: java, nodejs)",
+		"server (matches: java, nodejs)",
+		`Set "type:" manually`,
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("init output missing %q\nstdout:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestJavaScriptCompletionFallback(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "mf.yaml"), []byte(`project: test
+compose_file: docker-compose.yml
+services:
+  - name: api
+    type: java
+`), 0644)
+
+	stdout, _, err := runMF(dir, "__complete", "run", "api", "")
+	if err != nil {
+		t.Fatalf("completion failed: %v", err)
+	}
+	for _, s := range []string{"clean", "compile", "test", "package", "install"} {
+		if !strings.Contains(stdout, s) {
+			t.Errorf("expected lifecycle phase %q without pom.xml, got:\n%s", s, stdout)
+		}
+	}
+}
+
+// TestRunExec checks the docker-compose exec command built by `mf run` using
+// a fake docker-compose that prints its arguments.
+func TestRunExec(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(dir, "bin")
+	os.MkdirAll(binDir, 0755)
+	os.WriteFile(filepath.Join(binDir, "docker-compose"), []byte("#!/bin/sh\necho \"$@\"\n"), 0755)
+
+	os.WriteFile(filepath.Join(dir, "mf.yaml"), []byte(`project: test
+compose_file: docker-compose.yml
+services:
+  - name: web
+    type: python
+  - name: frontend
+    type: nodejs
+    path: ./frontend
+    package_manager: yarn
+  - name: api
+    type: java
+    path: ./api
+    package_manager: ./mvnw
+  - name: billing
+    type: java
+    path: ./billing
+`), 0644)
+
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"run", "frontend", "dev"}, "exec frontend yarn run dev"},
+		{[]string{"run", "frontend", "install"}, "exec frontend yarn install"},
+		{[]string{"run", "frontend", "build", "--", "--mode", "production"}, "exec frontend yarn run build --mode production"},
+		{[]string{"run", "frontend", "test", "--watch"}, "exec frontend yarn run test --watch"},
+		{[]string{"run", "api", "spring-boot:run"}, "exec api ./mvnw spring-boot:run"},
+		{[]string{"run", "api", "clean", "install", "-DskipTests"}, "exec api ./mvnw clean install -DskipTests"},
+		{[]string{"run", "billing", "install"}, "exec billing mvn install"},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, "_"), func(t *testing.T) {
+			cmd := exec.Command(binaryPath, tt.args...)
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("mf %v failed: %v\n%s", tt.args, err, out)
+			}
+			if !strings.HasSuffix(strings.TrimSpace(string(out)), tt.want) {
+				t.Errorf("mf %v ran %q, want suffix %q", tt.args, strings.TrimSpace(string(out)), tt.want)
+			}
+		})
+	}
+
+	_, stderr, err := runMF(dir, "run", "web", "dev")
+	if err == nil || !strings.Contains(stderr, "no runnable type") {
+		t.Errorf("expected 'no runnable type' error for python service, got err=%v stderr=%s", err, stderr)
+	}
+}

@@ -18,7 +18,11 @@ env_file: .env
 #   redis                                      → mf redis-cli
 #   celery_worker, celery_beat                 → mf celery start/stop/restart/logs
 #   flower                                     → mf flower logs
-#   Services with path: set                    → mf run <service> <script>
+#   nodejs, java                               → mf run <service> <task>
+#     nodejs: package.json scripts, package_manager: npm | yarn | pnpm
+#     java:   Maven phases/goals,   package_manager: mvn | ./mvnw
+# If mf init can't decide a service's type (conflicting signals), it leaves
+# type empty and warns — set it manually.
 services:
   - name: web
     type: python
@@ -38,6 +42,10 @@ services:
     type: nodejs
     path: ./frontend
     package_manager: npm
+  - name: billing
+    type: java
+    path: ./billing
+    package_manager: ./mvnw   # ./mvnw when the Maven wrapper exists, otherwise mvn
 
 # Local DNS + HTTPS (macOS only). Reach services by name, e.g. https://web.my-project.mf
 # One-time machine setup: `sudo mf dns install` and `sudo mf proxy install`.

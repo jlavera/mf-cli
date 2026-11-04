@@ -36,6 +36,8 @@ go test -v ./internal/config/
 - `internal/config/` — mf.yaml config struct, loader, writer
 - `internal/compose/` — docker-compose wrapper and compose file parser
 - `internal/runner/` — generic shell command runner
+- `internal/nodejs/` — package.json script reading + package manager detection
+- `internal/maven/` — pom.xml task discovery (lifecycle phases + `PluginGoals` registry) + `mvnw` detection
 
 ## Key Files
 
@@ -57,3 +59,7 @@ Add entries to `DefaultMatchers` in `internal/compose/parser.go`. Each matcher h
 - `Patterns` — image name prefixes to match
 - `ServiceType` — type identifier (e.g. "postgres", "redis", "flower")
 - `EnvMappings` — optional env var → config field mappings
+
+## Adding New App Technologies
+
+Add entries to `TechMatchers` in `internal/compose/parser.go` (`Executables`, `ImageKeywords`, `Manifests`). All matchers run against every signal; a type is assigned only when exactly one technology matches, otherwise the service is reported as ambiguous and the user sets `type` manually. Runnable tasks for `mf run` are wired per type in `cmd/run.go` and `cmd/completions.go`.

@@ -2,6 +2,8 @@ package compose
 
 import (
 	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -255,20 +257,26 @@ func TestClassifyServicesMinimal(t *testing.T) {
 	}
 }
 
-func TestReadDockerfileBaseImage(t *testing.T) {
+func TestDetectTechFromDockerfile(t *testing.T) {
 	tests := []struct {
-		name     string
-		content  string
-		wantTech string
+		name    string
+		content string
+		want    []string
 	}{
-		{"python", "FROM python:3.12-slim\nWORKDIR /app\n", "python"},
-		{"node", "FROM node:20-alpine\nWORKDIR /app\n", "nodejs"},
-		{"multistage node+nginx", "FROM node:20 AS builder\nRUN npm ci\nFROM nginx:alpine\nCOPY --from=builder /app/dist /usr/share/nginx/html\n", "nodejs"},
-		{"golang", "FROM golang:1.22\nWORKDIR /app\n", "go"},
-		{"ruby", "FROM ruby:3.3\nWORKDIR /app\n", "ruby"},
-		{"unknown", "FROM alpine:3.19\nRUN apk add curl\n", ""},
-		{"empty", "", ""},
-		{"comments only", "# just a comment\n", ""},
+		{"python", "FROM python:3.12-slim\nWORKDIR /app\n", []string{"python"}},
+		{"node", "FROM node:20-alpine\nWORKDIR /app\n", []string{"nodejs"}},
+		{"multistage node+nginx", "FROM node:20 AS builder\nRUN npm ci\nFROM nginx:alpine\nCOPY --from=builder /app/dist /usr/share/nginx/html\n", []string{"nodejs"}},
+		{"multistage maven+temurin", "FROM maven:3.9-eclipse-temurin-21 AS build\nRUN mvn package\nFROM eclipse-temurin:21-jre\n", []string{"java"}},
+		{"openjdk", "FROM openjdk:17-slim\n", []string{"java"}},
+		{"amazoncorretto", "FROM amazoncorretto:21\n", []string{"java"}},
+		{"platform flag", "FROM --platform=linux/amd64 node:20\n", []string{"nodejs"}},
+		{"stage reference ignored", "FROM node:20 AS java-builder\nFROM java-builder\n", []string{"nodejs"}},
+		{"multistage node+python", "FROM node:20 AS assets\nFROM python:3.12\n", []string{"nodejs", "python"}},
+		{"golang", "FROM golang:1.22\nWORKDIR /app\n", []string{"go"}},
+		{"ruby", "FROM ruby:3.3\nWORKDIR /app\n", []string{"ruby"}},
+		{"unknown", "FROM alpine:3.19\nRUN apk add curl\n", nil},
+		{"empty", "", nil},
+		{"comments only", "# just a comment\n", nil},
 	}
 
 	for _, tt := range tests {
@@ -276,11 +284,101 @@ func TestReadDockerfileBaseImage(t *testing.T) {
 			dir := t.TempDir()
 			path := dir + "/Dockerfile"
 			os.WriteFile(path, []byte(tt.content), 0644)
-			got := readDockerfileBaseImage(path)
-			if got != tt.wantTech {
-				t.Errorf("readDockerfileBaseImage() = %q, want %q", got, tt.wantTech)
+			got := detectTech("", "", path, "")
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("detectTech() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDetectTechFromCommandAndImage(t *testing.T) {
+	tests := []struct {
+		cmd   string
+		image string
+		want  []string
+	}{
+		{"python manage.py runserver 0.0.0.0:8000", "", []string{"python"}},
+		{"python3.12 -m uvicorn main:app", "", []string{"python"}},
+		{`sh -c "npm install && npm run dev --workspace=admin"`, "", []string{"nodejs"}},
+		{"npm run bundle", "", []string{"nodejs"}},
+		{"./mvnw spring-boot:run", "", []string{"java"}},
+		{"java -jar app.jar", "", []string{"java"}},
+		{"bundle exec rails s", "", []string{"ruby"}},
+		{"NODE_ENV=dev node server.js", "", []string{"nodejs"}},
+		{"", "node:20-alpine", []string{"nodejs"}},
+		{"", "eclipse-temurin:21", []string{"java"}},
+		{"npm start", "node:20", []string{"nodejs"}},
+		{"python app.py", "node:20", []string{"nodejs", "python"}},
+		{"", "alpine:3", nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.cmd+"|"+tt.image, func(t *testing.T) {
+			got := detectTech(tt.cmd, tt.image, "", "")
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("detectTech(%q, %q) = %v, want %v", tt.cmd, tt.image, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetectTechFromManifests(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{"pom.xml", []string{"pom.xml"}, []string{"java"}},
+		{"package.json", []string{"package.json"}, []string{"nodejs"}},
+		{"both", []string{"pom.xml", "package.json"}, []string{"java", "nodejs"}},
+		{"none", nil, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				os.WriteFile(filepath.Join(dir, f), []byte("{}"), 0644)
+			}
+			got := detectTech("", "", "", dir)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("detectTech() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyServicesAmbiguous(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "api"), 0755)
+	os.WriteFile(filepath.Join(dir, "api", "Dockerfile"), []byte("FROM maven:3.9\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "api", "package.json"), []byte("{}"), 0644)
+
+	cf := &ComposeFile{Services: map[string]ComposeService{
+		"api": {Build: "./api"},
+		"app": {Image: "node:20", Command: "python app.py"},
+	}}
+	for _, ds := range ClassifyServices(cf, dir) {
+		if ds.ServiceType != "" {
+			t.Errorf("%s: expected empty type, got %q", ds.Name, ds.ServiceType)
+		}
+		want := map[string][]string{"api": {"java", "nodejs"}, "app": {"nodejs", "python"}}[ds.Name]
+		if !reflect.DeepEqual(ds.Candidates, want) {
+			t.Errorf("%s: candidates = %v, want %v", ds.Name, ds.Candidates, want)
+		}
+	}
+}
+
+func TestClassifyServicesJavaBuild(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "api"), 0755)
+	os.WriteFile(filepath.Join(dir, "api", "pom.xml"), []byte("<project/>"), 0644)
+
+	cf := &ComposeFile{Services: map[string]ComposeService{"api": {Build: "./api"}}}
+	ds := ClassifyServices(cf, dir)[0]
+	if ds.ServiceType != "java" || ds.Candidates != nil {
+		t.Errorf("expected java with no candidates, got %q %v", ds.ServiceType, ds.Candidates)
 	}
 }
 
