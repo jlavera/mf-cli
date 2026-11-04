@@ -302,16 +302,7 @@ services:
 
 Services without a published port are skipped automatically — there's nothing to proxy to.
 
-The service hostname routes to its first published HTTP port. To choose a different one, set `proxy_port` (a host port) in `mf.yaml`:
-
-```yaml
-services:
-  - name: temporal_server
-    type: temporal
-    proxy_port: 8233                     # route to the UI, not gRPC
-```
-
-The proxy only speaks HTTP to backends, so non-HTTP ports (gRPC, Postgres, Redis, …) can't be reached through it.
+The service hostname routes to its first published HTTP port. The proxy only speaks HTTP to backends, so non-HTTP ports (gRPC, Postgres, Redis, …) can't be reached through it.
 
 ### Named ports
 
@@ -333,7 +324,7 @@ services:
 
 ```
 https://ui.temporal_server.topline.mf  → localhost:8233
-https://temporal_server.topline.mf     → localhost:8233   (first HTTP port, or proxy_port)
+https://temporal_server.topline.mf     → localhost:8233   (first HTTP port)
 ```
 
 - Ports whose `app_protocol` is anything other than `http`/`https` (e.g. `grpc`) get no route. Connect to them on `localhost:<port>` directly.

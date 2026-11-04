@@ -60,7 +60,7 @@ func warningFor(t *testing.T, svc string) string {
 	return services[svc].Warning
 }
 
-func TestResolveRoutesProxyPort(t *testing.T) {
+func TestResolveRoutesUnnamedPorts(t *testing.T) {
 	withConfig(t, `services:
   web:
     image: python
@@ -73,18 +73,13 @@ func TestResolveRoutesProxyPort(t *testing.T) {
       - "8233:8233"
 `, []config.Service{
 		{Name: "web", Type: "python"},
-		{Name: "temporal_server", Type: "temporal", ProxyPort: 8233},
+		{Name: "temporal_server", Type: "temporal"},
 	})
 
 	assertRoutes(t, routeMap(t), map[string]string{
 		"web.topline.mf":             "http://localhost:8000",
-		"temporal_server.topline.mf": "http://localhost:8233",
+		"temporal_server.topline.mf": "http://localhost:7233",
 	})
-
-	w := warningFor(t, "temporal_server")
-	if !strings.Contains(w, "only 8233 is routed") {
-		t.Errorf("warning should name proxy_port 8233, got %q", w)
-	}
 }
 
 func TestResolveRoutesNamedPorts(t *testing.T) {

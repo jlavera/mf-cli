@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/jlavera/mf-cli/internal/compose"
@@ -73,27 +72,19 @@ func serviceRoutes() (string, map[string]serviceRouting, error) {
 
 	result := make(map[string]serviceRouting)
 	for svcName, hostname := range cfg.ResolveHostnames(projectName, ports) {
-		var proxyPort int
-		if svc := cfg.FindService(svcName); svc != nil {
-			proxyPort = svc.ProxyPort
-		}
-		result[svcName] = buildServiceRouting(svcName, hostname, specs[svcName], proxyPort, env)
+		result[svcName] = buildServiceRouting(svcName, hostname, specs[svcName], env)
 	}
 	return projectName, result, nil
 }
 
-func buildServiceRouting(svcName, hostname string, specs []compose.PortSpec, proxyPort int, env map[string]string) serviceRouting {
+func buildServiceRouting(svcName, hostname string, specs []compose.PortSpec, env map[string]string) serviceRouting {
 	r := serviceRouting{Hostname: hostname}
 
 	defaultPort := ""
-	if proxyPort != 0 {
-		defaultPort = strconv.Itoa(proxyPort)
-	} else {
-		for _, p := range specs {
-			if p.IsHTTP() {
-				defaultPort = p.HostPort(env)
-				break
-			}
+	for _, p := range specs {
+		if p.IsHTTP() {
+			defaultPort = p.HostPort(env)
+			break
 		}
 	}
 	if defaultPort != "" {
